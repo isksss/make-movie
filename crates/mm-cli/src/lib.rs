@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use mm_core::{load_project, validate_project};
 use mm_plugin_runtime::{load_manifest, PluginManager, PluginReference};
-use mm_render::{render_project, FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator};
+use mm_render::{
+    render_frame, render_project, FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,7 +20,7 @@ pub struct Cli {
 enum Command {
     Build(ProjectArgs),
     Validate(ProjectArgs),
-    Preview(ProjectArgs),
+    Preview(PreviewArgs),
     Cleanup(ProjectRootArgs),
     Package(ProjectRootArgs),
     Doctor,
@@ -36,6 +38,16 @@ struct ProjectArgs {
     output: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = CliRenderBackend::Auto)]
     backend: CliRenderBackend,
+}
+
+#[derive(Debug, Args)]
+struct PreviewArgs {
+    #[arg(long, default_value = "mm.toml")]
+    project: PathBuf,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long, default_value_t = 0.0)]
+    time: f64,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -118,10 +130,31 @@ fn validate(args: ProjectArgs) -> Result<()> {
     Ok(())
 }
 
-fn preview(args: ProjectArgs) -> Result<()> {
+fn preview(args: PreviewArgs) -> Result<()> {
     let project = load_project(&args.project)?;
-    validate_project(&project, project_root(&args.project))?;
-    println!("preview は利用可能です: {}", args.project.display());
+    let project_root = project_root(&args.project);
+    validate_project(&project, &project_root)?;
+    let output = args
+        .output
+        .unwrap_or_else(|| project_root.join("cache/preview.png"));
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "preview 出力先ディレクトリを作成できません: {}",
+                parent.display()
+            )
+        })?;
+    }
+    let options = RenderOptions::new(&project_root, &output);
+    let frame = render_frame(
+        &project,
+        &options,
+        args.time.clamp(0.0, project.settings.duration),
+    )?;
+    frame
+        .save(&output)
+        .with_context(|| format!("preview 画像を保存できません: {}", output.display()))?;
+    println!("preview を出力しました: {}", output.display());
     Ok(())
 }
 
@@ -225,6 +258,29 @@ mod tests {
         match cli.command {
             Command::Build(args) => assert!(matches!(args.backend, CliRenderBackend::Gpu)),
             _ => panic!("build command として parse されていません"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_preview_time_and_output() {
+        let cli = Cli::try_parse_from([
+            "mm",
+            "preview",
+            "--project",
+            "example/mm.toml",
+            "--time",
+            "0.5",
+            "--output",
+            "preview.png",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Preview(args) => {
+                assert_eq!(args.project, PathBuf::from("example/mm.toml"));
+                assert_eq!(args.time, 0.5);
+                assert_eq!(args.output, Some(PathBuf::from("preview.png")));
+            }
+            _ => panic!("preview command として parse されていません"),
         }
     }
 

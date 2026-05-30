@@ -22,6 +22,28 @@ fn validate_command_accepts_valid_project() {
         .success();
 }
 
+#[test]
+fn preview_command_writes_png_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project(dir.path());
+    let output = dir.path().join("preview.png");
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    command
+        .arg("preview")
+        .arg("--project")
+        .arg(dir.path().join("mm.toml"))
+        .arg("--time")
+        .arg("0.5")
+        .arg("--output")
+        .arg(&output)
+        .assert()
+        .success();
+
+    let bytes = fs::read(output).unwrap();
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+}
+
 fn write_valid_project(root: &Path) {
     let media = root.join("media/image");
     fs::create_dir_all(&media).unwrap();
