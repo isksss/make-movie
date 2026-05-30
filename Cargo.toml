@@ -16,8 +16,11 @@ repository = "https://github.com/isksss/make-movie"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 image = "0.25"
+ab_glyph = "0.2"
 serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 thiserror = "2"
 toml = "0.8"
 which = "7"
+pollster = "0.4"
+wgpu = "25"

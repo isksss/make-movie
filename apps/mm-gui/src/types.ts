@@ -20,6 +20,7 @@ export interface TimelineLayer {
   id: string;
   trackId: string;
   label: string;
+  contentKind: "video" | "image" | "audio" | "text" | "subtitle" | "voice";
   start: number;
   duration: number;
   zIndex: number;

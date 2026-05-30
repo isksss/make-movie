@@ -1,0 +1,68 @@
+[settings]
+title = "Subtitle Example"
+width = 640
+height = 360
+fps = 30
+sample_rate = 48000
+duration = 2.0
+output = "output/subtitle.mp4"
+asset_mode = "copy"
+
+[[assets]]
+id = "main_subtitle"
+kind = "subtitle"
+path = "media/subtitle/main.srt"
+
+[[tracks]]
+id = "v1"
+name = "V1 Main Video"
+kind = "video"
+
+[[tracks.layers]]
+id = "title"
+start = 0.0
+duration = 2.0
+z_index = 1
+
+[tracks.layers.content]
+type = "text"
+text = "make-movie"
+font_size = 48.0
+color = "#58a9b8"
+letter_spacing = 1.0
+line_spacing = 1.2
+align = "center"
+
+[tracks.layers.content.shadow]
+color = "#000000"
+offset_x = 2.0
+offset_y = 2.0
+blur = 0.0
+
+[tracks.layers.transform]
+x = 320.0
+y = 96.0
+width = 400.0
+height = 64.0
+scale = 1.0
+rotation = 0.0
+opacity = 1.0
+
+[[tracks.layers]]
+id = "subtitle"
+start = 0.0
+duration = 2.0
+z_index = 2
+
+[tracks.layers.content]
+type = "subtitle"
+asset_id = "main_subtitle"
+
+[tracks.layers.transform]
+x = 320.0
+y = 260.0
+width = 560.0
+height = 48.0
+scale = 1.0
+rotation = 0.0
+opacity = 1.0

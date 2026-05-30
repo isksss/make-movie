@@ -163,10 +163,16 @@ pub type Millis = u64;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextLayer {
     pub text: String,
+    #[serde(default)]
+    pub font_asset_id: Option<String>,
     #[serde(default = "default_font_size")]
     pub font_size: f32,
     #[serde(default = "default_color")]
     pub color: String,
+    #[serde(default)]
+    pub letter_spacing: f32,
+    #[serde(default = "default_line_spacing")]
+    pub line_spacing: f32,
     #[serde(default)]
     pub stroke: Option<TextStroke>,
     #[serde(default)]
@@ -181,6 +187,10 @@ fn default_font_size() -> f32 {
 
 fn default_color() -> String {
     "#ffffff".to_string()
+}
+
+fn default_line_spacing() -> f32 {
+    1.2
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -580,9 +590,12 @@ mod tests {
                     duration: 3.0,
                     z_index: 0,
                     content: LayerContent::Text(TextLayer {
-                        text: "こんにちは".to_string(),
+                        text: "Hello\nmake-movie".to_string(),
+                        font_asset_id: None,
                         font_size: 64.0,
                         color: "#ffffff".to_string(),
+                        letter_spacing: 0.0,
+                        line_spacing: 1.2,
                         stroke: None,
                         shadow: None,
                         align: TextAlign::Center,

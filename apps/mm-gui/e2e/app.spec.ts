@@ -1,0 +1,51 @@
+import { expect, test } from "@playwright/test";
+
+test("主要ペインとプレビュー描画を確認できる", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("make-movie")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Assets" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Preview" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Property" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
+
+  const canvas = page.getByLabel("Rendered preview");
+  await expect(canvas).toBeVisible();
+  await expect
+    .poll(async () =>
+      canvas.evaluate((element) => {
+        const target = element as HTMLCanvasElement;
+        const context = target.getContext("2d");
+        if (!context || target.width === 0 || target.height === 0) {
+          return false;
+        }
+        const data = context.getImageData(0, 0, target.width, target.height).data;
+        for (let index = 0; index < data.length; index += 4) {
+          if (data[index] !== 16 || data[index + 1] !== 20 || data[index + 2] !== 23) {
+            return true;
+          }
+        }
+        return false;
+      }),
+    )
+    .toBe(true);
+});
+
+test("プレビュー操作とタイムライン選択がUIに反映される", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Next frame" }).click();
+  await expect(page.getByText("0.03s")).toBeVisible();
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  await expect(page.getByLabel("Layer")).toHaveValue("Intro Image");
+
+  await page.getByLabel("Start").fill("1.2");
+  await expect(page.getByText("Intro Image")).toBeVisible();
+
+  await page.getByLabel("Playback rate").selectOption("2");
+  await expect(page.getByLabel("Playback rate")).toHaveValue("2");
+});

@@ -1,7 +1,9 @@
-dist
-node_modules
-src-tauri/target
-src-tauri/gen
+dist/
+node_modules/
+playwright-report/
+src-tauri/gen/
+src-tauri/target/
+test-results/
 *.tsbuildinfo
-vite.config.js
 vite.config.d.ts
+vite.config.js

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use mm_core::{load_project, validate_project};
 use mm_plugin_runtime::{PluginManager, PluginReference};
-use mm_render::{render_project, FfmpegLocator, RenderOptions, SystemFfmpegLocator};
+use mm_render::{render_project, FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -34,6 +34,25 @@ struct ProjectArgs {
     project: PathBuf,
     #[arg(long)]
     output: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = CliRenderBackend::Auto)]
+    backend: CliRenderBackend,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum CliRenderBackend {
+    Auto,
+    Cpu,
+    Gpu,
+}
+
+impl From<CliRenderBackend> for RenderBackend {
+    fn from(value: CliRenderBackend) -> Self {
+        match value {
+            CliRenderBackend::Auto => RenderBackend::Auto,
+            CliRenderBackend::Cpu => RenderBackend::Cpu,
+            CliRenderBackend::Gpu => RenderBackend::Gpu,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -77,7 +96,8 @@ fn build(args: ProjectArgs) -> Result<()> {
     let output = args
         .output
         .unwrap_or_else(|| project.settings.output.clone());
-    let options = RenderOptions::new(project_root, output);
+    let mut options = RenderOptions::new(project_root, output);
+    options.backend = args.backend.into();
     render_project(&project, &options)?;
     println!("build が完了しました: {}", options.output_path.display());
     Ok(())
@@ -180,6 +200,15 @@ mod tests {
         match cli.command {
             Command::Validate(args) => assert_eq!(args.project, PathBuf::from("example/mm.toml")),
             _ => panic!("validate command として parse されていません"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_build_backend() {
+        let cli = Cli::try_parse_from(["mm", "build", "--backend", "gpu"]).unwrap();
+        match cli.command {
+            Command::Build(args) => assert!(matches!(args.backend, CliRenderBackend::Gpu)),
+            _ => panic!("build command として parse されていません"),
         }
     }
 

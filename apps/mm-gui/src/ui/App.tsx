@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
+import { PreviewCanvas } from "./PreviewCanvas";
 
 export function App() {
   const {
@@ -71,12 +72,7 @@ export function App() {
 
         <section className="preview-pane" aria-label="Preview">
           <div className="preview-surface">
-            <div className="safe-frame">
-              <strong>{project.settings.title}</strong>
-              <span>
-                {project.settings.width}x{project.settings.height} / {project.settings.fps}fps
-              </span>
-            </div>
+            <PreviewCanvas project={project} preview={preview} />
           </div>
           <div className="preview-controls">
             <button
