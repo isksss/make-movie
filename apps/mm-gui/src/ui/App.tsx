@@ -25,7 +25,7 @@ import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
-import type { AssetKind, PluginDeclaration, ProjectState } from "../types";
+import type { AssetKind, PluginDeclaration, ProjectState, TtsProviderKind } from "../types";
 import { messages, optionLabels } from "./i18n";
 import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
@@ -69,6 +69,7 @@ const easingOptions = [
   "bounce",
   "elastic",
 ] as const;
+const ttsProviderOptions = ["voicevox", "aivis_speech", "coeiro_ink"] as const;
 
 export function App() {
   const {
@@ -945,6 +946,25 @@ export function App() {
             </div>
           ) : null}
           <div className="tts-editor">
+            <label>
+              {t.provider}
+              <select
+                disabled={!voiceLayer}
+                onChange={(event) =>
+                  voiceLayer &&
+                  updateLayerVoice(voiceLayer.id, {
+                    provider: event.target.value as TtsProviderKind,
+                  })
+                }
+                value={voiceLayer?.voice.provider ?? "voicevox"}
+              >
+                {ttsProviderOptions.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {labels.ttsProvider[provider]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label>
               {t.speaker}
               <input
