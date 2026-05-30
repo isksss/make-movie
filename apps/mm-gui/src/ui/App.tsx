@@ -37,6 +37,7 @@ const textAlignOptions = ["left", "center", "right"] as const;
 const maskOptions = ["none", "circle", "rounded_rect", "ellipse", "svg"] as const;
 const fitOptions = ["none", "contain", "cover", "stretch", "blur_background"] as const;
 const transitionOptions = ["none", "crossfade", "wipe", "push", "zoom", "blur", "flash"] as const;
+const wipeShapeOptions = ["circle", "rounded_rect"] as const;
 const effectOptions = [
   "none",
   "fade_in",
@@ -746,6 +747,124 @@ export function App() {
                           value={selectedTransition.duration}
                         />
                       </label>
+                      {selectedTransition.kind === "wipe" ? (
+                        <>
+                          <label>
+                            {t.wipeShape}
+                            <select
+                              onChange={(event) =>
+                                updateLayerTransition(selectedLayer.id, {
+                                  wipeShape: event.target
+                                    .value as ProjectState["layers"][number]["transition"]["wipeShape"],
+                                })
+                              }
+                              value={selectedTransition.wipeShape}
+                            >
+                              {wipeShapeOptions.map((value) => (
+                                <option key={value} value={value}>
+                                  {labels.wipeShape[value]}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {selectedTransition.wipeShape === "rounded_rect" ? (
+                            <>
+                              <label>
+                                {t.wipeRadius}
+                                <input
+                                  min={0}
+                                  onChange={(event) =>
+                                    updateLayerTransition(selectedLayer.id, {
+                                      wipeRadius: Number(event.target.value),
+                                    })
+                                  }
+                                  step={1}
+                                  type="number"
+                                  value={selectedTransition.wipeRadius}
+                                />
+                              </label>
+                              <label>
+                                {t.wipeBorderColor}
+                                <input
+                                  onChange={(event) =>
+                                    updateLayerTransition(selectedLayer.id, {
+                                      wipeBorderColor: event.target.value,
+                                    })
+                                  }
+                                  type="color"
+                                  value={selectedTransition.wipeBorderColor}
+                                />
+                              </label>
+                              <label>
+                                {t.wipeBorderWidth}
+                                <input
+                                  min={0}
+                                  onChange={(event) =>
+                                    updateLayerTransition(selectedLayer.id, {
+                                      wipeBorderWidth: Number(event.target.value),
+                                    })
+                                  }
+                                  step={1}
+                                  type="number"
+                                  value={selectedTransition.wipeBorderWidth}
+                                />
+                              </label>
+                              <label>
+                                {t.wipeShadowColor}
+                                <input
+                                  onChange={(event) =>
+                                    updateLayerTransition(selectedLayer.id, {
+                                      wipeShadowColor: event.target.value,
+                                    })
+                                  }
+                                  type="color"
+                                  value={selectedTransition.wipeShadowColor}
+                                />
+                              </label>
+                              <label>
+                                {t.wipeShadowOffsetX}
+                                <input
+                                  onChange={(event) =>
+                                    updateLayerTransition(selectedLayer.id, {
+                                      wipeShadowOffsetX: Number(event.target.value),
+                                    })
+                                  }
+                                  step={1}
+                                  type="number"
+                                  value={selectedTransition.wipeShadowOffsetX}
+                                />
+                              </label>
+                              <label>
+                                {t.wipeShadowOffsetY}
+                                <input
+                                  onChange={(event) =>
+                                    updateLayerTransition(selectedLayer.id, {
+                                      wipeShadowOffsetY: Number(event.target.value),
+                                    })
+                                  }
+                                  step={1}
+                                  type="number"
+                                  value={selectedTransition.wipeShadowOffsetY}
+                                />
+                              </label>
+                              <label>
+                                {t.wipeShadowBlur}
+                                <input
+                                  min={0}
+                                  onChange={(event) =>
+                                    updateLayerTransition(selectedLayer.id, {
+                                      wipeShadowBlur: Number(event.target.value),
+                                    })
+                                  }
+                                  step={1}
+                                  type="number"
+                                  value={selectedTransition.wipeShadowBlur}
+                                />
+                              </label>
+                            </>
+                          ) : null}
+                        </>
+                      ) : null}
                     </>
                   ) : null}
                   {selectedEffect ? (

@@ -2,6 +2,7 @@ export type AssetKind = "video" | "image" | "audio" | "subtitle" | "font" | "mas
 export type MaskKind = "none" | "circle" | "rounded_rect" | "ellipse" | "svg";
 export type FitMode = "none" | "contain" | "cover" | "stretch" | "blur_background";
 export type TransitionKind = "none" | "crossfade" | "wipe" | "push" | "zoom" | "blur" | "flash";
+export type WipeShapeKind = "circle" | "rounded_rect";
 export type EffectKind =
   | "none"
   | "fade_in"
@@ -140,6 +141,14 @@ export interface CropRect {
 export interface LayerTransition {
   kind: TransitionKind;
   duration: number;
+  wipeShape: WipeShapeKind;
+  wipeRadius: number;
+  wipeBorderColor: string;
+  wipeBorderWidth: number;
+  wipeShadowColor: string;
+  wipeShadowOffsetX: number;
+  wipeShadowOffsetY: number;
+  wipeShadowBlur: number;
 }
 
 export interface LayerEffect {
@@ -225,6 +234,14 @@ export function layerTransition(overrides: Partial<LayerTransition> = {}): Layer
   return {
     kind: "none",
     duration: 0.5,
+    wipeShape: "circle",
+    wipeRadius: 24,
+    wipeBorderColor: "#ffffff",
+    wipeBorderWidth: 0,
+    wipeShadowColor: "#000000",
+    wipeShadowOffsetX: 0,
+    wipeShadowOffsetY: 0,
+    wipeShadowBlur: 0,
     ...overrides,
   };
 }

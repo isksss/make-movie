@@ -34,7 +34,11 @@ type Section =
   | "mask"
   | "textStroke"
   | "textShadow"
-  | "transform";
+  | "transform"
+  | "transition"
+  | "transitionShape"
+  | "transitionBorder"
+  | "transitionShadow";
 
 export function serializeProjectToToml(project: ProjectState): string {
   const lines: string[] = [
@@ -172,6 +176,22 @@ export function parseProjectToml(
     }
     if (line === "[tracks.layers.transform]") {
       section = "transform";
+      continue;
+    }
+    if (line === "[tracks.layers.transition]") {
+      section = "transition";
+      continue;
+    }
+    if (line === "[tracks.layers.transition.shape]") {
+      section = "transitionShape";
+      continue;
+    }
+    if (line === "[tracks.layers.transition.shape.border]") {
+      section = "transitionBorder";
+      continue;
+    }
+    if (line === "[tracks.layers.transition.shape.shadow]") {
+      section = "transitionShadow";
       continue;
     }
 
@@ -366,7 +386,30 @@ function appendTransition(lines: string[], transition: LayerTransition) {
     `duration = ${transition.duration}`,
   );
   if (transition.kind === "wipe") {
-    lines.push("[tracks.layers.transition.shape]", 'type = "circle"');
+    lines.push("[tracks.layers.transition.shape]", `type = ${quote(transition.wipeShape)}`);
+    if (transition.wipeShape === "rounded_rect") {
+      lines.push(`radius = ${transition.wipeRadius}`);
+      if (transition.wipeBorderWidth > 0) {
+        lines.push(
+          "[tracks.layers.transition.shape.border]",
+          `color = ${quote(transition.wipeBorderColor)}`,
+          `width = ${transition.wipeBorderWidth}`,
+        );
+      }
+      if (
+        transition.wipeShadowOffsetX !== 0 ||
+        transition.wipeShadowOffsetY !== 0 ||
+        transition.wipeShadowBlur > 0
+      ) {
+        lines.push(
+          "[tracks.layers.transition.shape.shadow]",
+          `color = ${quote(transition.wipeShadowColor)}`,
+          `offset_x = ${transition.wipeShadowOffsetX}`,
+          `offset_y = ${transition.wipeShadowOffsetY}`,
+          `blur = ${transition.wipeShadowBlur}`,
+        );
+      }
+    }
   }
   lines.push("");
 }
@@ -430,6 +473,14 @@ function assignValue(
       ...currentLayer.transform,
       [key === "opacity" ? "opacity" : key]: Number(value),
     };
+  } else if (section === "transition" && currentLayer) {
+    assignTransition(currentLayer, key, value);
+  } else if (section === "transitionShape" && currentLayer) {
+    assignTransitionShape(currentLayer, key, value);
+  } else if (section === "transitionBorder" && currentLayer) {
+    assignTransitionBorder(currentLayer, key, value);
+  } else if (section === "transitionShadow" && currentLayer) {
+    assignTransitionShadow(currentLayer, key, value);
   }
 }
 
@@ -559,6 +610,64 @@ function assignMask(layer: TimelineLayer, key: string, value: string | number) {
   } else if (key === "path") {
     layer.maskPath = String(value);
   }
+}
+
+function assignTransition(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "type") {
+    layer.transition = {
+      ...layer.transition,
+      kind: parseTransitionKind(value),
+    };
+  } else if (key === "duration") {
+    layer.transition = { ...layer.transition, duration: Number(value) };
+  }
+}
+
+function assignTransitionShape(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "type") {
+    const shape = String(value);
+    layer.transition = {
+      ...layer.transition,
+      wipeShape: shape === "rounded_rect" ? "rounded_rect" : "circle",
+    };
+  } else if (key === "radius") {
+    layer.transition = { ...layer.transition, wipeRadius: Number(value) };
+  }
+}
+
+function assignTransitionBorder(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "color") {
+    layer.transition = { ...layer.transition, wipeBorderColor: String(value) };
+  } else if (key === "width") {
+    layer.transition = { ...layer.transition, wipeBorderWidth: Number(value) };
+  }
+}
+
+function assignTransitionShadow(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "color") {
+    layer.transition = { ...layer.transition, wipeShadowColor: String(value) };
+  } else if (key === "offset_x") {
+    layer.transition = { ...layer.transition, wipeShadowOffsetX: Number(value) };
+  } else if (key === "offset_y") {
+    layer.transition = { ...layer.transition, wipeShadowOffsetY: Number(value) };
+  } else if (key === "blur") {
+    layer.transition = { ...layer.transition, wipeShadowBlur: Number(value) };
+  }
+}
+
+function parseTransitionKind(value: string | number): LayerTransition["kind"] {
+  const kind = String(value);
+  if (kind === "cross_fade" || kind === "crossfade") return "crossfade";
+  if (
+    kind === "wipe" ||
+    kind === "push" ||
+    kind === "zoom" ||
+    kind === "blur" ||
+    kind === "flash"
+  ) {
+    return kind;
+  }
+  return "none";
 }
 
 function parseMaskKind(value: string | number) {

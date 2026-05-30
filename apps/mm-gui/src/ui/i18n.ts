@@ -7,6 +7,7 @@ import type {
   TextAlignKind,
   TransitionKind,
   TtsProviderKind,
+  WipeShapeKind,
 } from "../types";
 
 export type Locale = "ja" | "en";
@@ -85,6 +86,14 @@ export const messages = {
     emotion: "感情",
     transition: "トランジション",
     transitionDuration: "トランジション時間",
+    wipeShape: "ワイプ形状",
+    wipeRadius: "ワイプ角丸",
+    wipeBorderColor: "ワイプ枠線色",
+    wipeBorderWidth: "ワイプ枠線幅",
+    wipeShadowColor: "ワイプ影色",
+    wipeShadowOffsetX: "ワイプ影 X",
+    wipeShadowOffsetY: "ワイプ影 Y",
+    wipeShadowBlur: "ワイプ影ぼかし",
     effect: "エフェクト",
     effectDuration: "エフェクト時間",
     effectAmount: "エフェクト量",
@@ -173,6 +182,14 @@ export const messages = {
     emotion: "Emotion",
     transition: "Transition",
     transitionDuration: "Transition Duration",
+    wipeShape: "Wipe Shape",
+    wipeRadius: "Wipe Radius",
+    wipeBorderColor: "Wipe Border Color",
+    wipeBorderWidth: "Wipe Border Width",
+    wipeShadowColor: "Wipe Shadow Color",
+    wipeShadowOffsetX: "Wipe Shadow X",
+    wipeShadowOffsetY: "Wipe Shadow Y",
+    wipeShadowBlur: "Wipe Shadow Blur",
     effect: "Effect",
     effectDuration: "Effect Duration",
     effectAmount: "Effect Amount",
@@ -197,6 +214,7 @@ export const optionLabels: Record<
     mask: Record<MaskKind, string>;
     fit: Record<FitMode, string>;
     transition: Record<TransitionKind, string>;
+    wipeShape: Record<WipeShapeKind, string>;
     effect: Record<EffectKind, string>;
     animatedProperty: Record<AnimatedProperty, string>;
     easing: Record<EasingKind, string>;
@@ -231,6 +249,10 @@ export const optionLabels: Record<
       zoom: "ズーム",
       blur: "ぼかし",
       flash: "フラッシュ",
+    },
+    wipeShape: {
+      circle: "丸",
+      rounded_rect: "角丸四角",
     },
     effect: {
       none: "なし",
@@ -298,6 +320,10 @@ export const optionLabels: Record<
       zoom: "Zoom",
       blur: "Blur",
       flash: "Flash",
+    },
+    wipeShape: {
+      circle: "Circle",
+      rounded_rect: "Rounded rectangle",
     },
     effect: {
       none: "None",

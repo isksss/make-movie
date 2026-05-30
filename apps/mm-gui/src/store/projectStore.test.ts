@@ -312,21 +312,39 @@ describe("projectStore", () => {
     useProjectStore.getState().updateLayerTransition("intro-image", {
       kind: "wipe",
       duration: 1.2,
+      wipeShape: "rounded_rect",
+      wipeRadius: 32,
+      wipeBorderColor: "#ff0000",
+      wipeBorderWidth: 3,
+      wipeShadowColor: "#0000ff",
+      wipeShadowOffsetX: 4,
+      wipeShadowOffsetY: 5,
+      wipeShadowBlur: 6,
     });
 
     let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.transition.kind).toBe("wipe");
     expect(layer?.transition.duration).toBe(1.2);
+    expect(layer?.transition.wipeShape).toBe("rounded_rect");
+    expect(layer?.transition.wipeRadius).toBe(32);
+    expect(layer?.transition.wipeBorderColor).toBe("#ff0000");
+    expect(layer?.transition.wipeBorderWidth).toBe(3);
+    expect(layer?.transition.wipeShadowColor).toBe("#0000ff");
+    expect(layer?.transition.wipeShadowOffsetX).toBe(4);
+    expect(layer?.transition.wipeShadowOffsetY).toBe(5);
+    expect(layer?.transition.wipeShadowBlur).toBe(6);
 
     useProjectStore.getState().undo();
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.transition.kind).toBe("none");
     expect(layer?.transition.duration).toBe(0.5);
+    expect(layer?.transition.wipeShape).toBe("circle");
 
     useProjectStore.getState().redo();
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.transition.kind).toBe("wipe");
     expect(layer?.transition.duration).toBe(1.2);
+    expect(layer?.transition.wipeShape).toBe("rounded_rect");
   });
 
   it("layer effect を更新しUndo/Redoできる", () => {
