@@ -17,6 +17,7 @@ pub struct RenderOptions {
     pub output_path: PathBuf,
     pub ffmpeg_path: Option<PathBuf>,
     pub background: Rgba<u8>,
+    pub backend: RenderBackend,
 }
 
 impl RenderOptions {
@@ -26,8 +27,22 @@ impl RenderOptions {
             output_path: output_path.into(),
             ffmpeg_path: None,
             background: Rgba([20, 20, 24, 255]),
+            backend: RenderBackend::Auto,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderBackend {
+    Auto,
+    Cpu,
+    Gpu,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuProbe {
+    pub available: bool,
+    pub adapter_name: Option<String>,
 }
 
 pub trait FfmpegLocator {
@@ -56,11 +71,47 @@ impl FfmpegLocator for SystemFfmpegLocator {
 }
 
 pub fn render_project(project: &Project, options: &RenderOptions) -> Result<()> {
+    match options.backend {
+        RenderBackend::Cpu => {}
+        RenderBackend::Auto => {
+            let _ = probe_gpu_backend();
+        }
+        RenderBackend::Gpu => {
+            let probe = probe_gpu_backend();
+            if !probe.available {
+                bail!("GPU renderer backend を利用できません");
+            }
+        }
+    }
     let ffmpeg = match &options.ffmpeg_path {
         Some(path) => path.clone(),
         None => SystemFfmpegLocator.ffmpeg_path(project)?,
     };
     encode_with_ffmpeg(project, options, &ffmpeg)
+}
+
+pub fn probe_gpu_backend() -> GpuProbe {
+    pollster::block_on(async {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let Ok(adapter) = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .await
+        else {
+            return GpuProbe {
+                available: false,
+                adapter_name: None,
+            };
+        };
+        let info = adapter.get_info();
+        GpuProbe {
+            available: true,
+            adapter_name: Some(info.name),
+        }
+    })
 }
 
 fn encode_with_ffmpeg(project: &Project, options: &RenderOptions, ffmpeg: &Path) -> Result<()> {
