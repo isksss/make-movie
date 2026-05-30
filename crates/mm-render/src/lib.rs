@@ -75,6 +75,59 @@ impl FfmpegLocator for SystemFfmpegLocator {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct BundledFfmpegLocator {
+    bundle_dir: PathBuf,
+}
+
+impl BundledFfmpegLocator {
+    pub fn new(bundle_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            bundle_dir: bundle_dir.into(),
+        }
+    }
+
+    fn binary_path(&self, name: &str) -> Result<PathBuf> {
+        bundled_binary_path(&self.bundle_dir, name).with_context(|| {
+            format!(
+                "同梱 {name} が見つかりません: {}",
+                self.bundle_dir.display()
+            )
+        })
+    }
+}
+
+impl FfmpegLocator for BundledFfmpegLocator {
+    fn ffmpeg_path(&self, _project: &Project) -> Result<PathBuf> {
+        self.binary_path("ffmpeg")
+    }
+
+    fn ffprobe_path(&self) -> Result<PathBuf> {
+        self.binary_path("ffprobe")
+    }
+}
+
+fn bundled_binary_path(bundle_dir: &Path, name: &str) -> Option<PathBuf> {
+    executable_names(name)
+        .into_iter()
+        .flat_map(|file_name| {
+            [
+                bundle_dir.join(&file_name),
+                bundle_dir.join("bin").join(&file_name),
+            ]
+        })
+        .find(|path| path.is_file())
+}
+
+fn executable_names(name: &str) -> Vec<String> {
+    let mut names = vec![name.to_string()];
+    let exe_name = format!("{name}.exe");
+    if !names.iter().any(|candidate| candidate == &exe_name) {
+        names.push(exe_name);
+    }
+    names
+}
+
 pub fn render_project(project: &Project, options: &RenderOptions) -> Result<()> {
     let active_backend = match options.backend {
         RenderBackend::Cpu => ActiveRenderBackend::Cpu,
@@ -2338,6 +2391,50 @@ mod tests {
             align_to(GPU_COPY_ALIGNMENT + 1, GPU_COPY_ALIGNMENT),
             GPU_COPY_ALIGNMENT * 2
         );
+    }
+
+    #[test]
+    fn bundled_ffmpeg_locator_resolves_adjacent_binaries() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ffmpeg_path = dir.path().join("ffmpeg");
+        let ffprobe_path = dir.path().join("ffprobe");
+        fs::write(&ffmpeg_path, [])?;
+        fs::write(&ffprobe_path, [])?;
+        let locator = BundledFfmpegLocator::new(dir.path());
+        let project = text_project();
+
+        assert_eq!(locator.ffmpeg_path(&project)?, ffmpeg_path);
+        assert_eq!(locator.ffprobe_path()?, ffprobe_path);
+        Ok(())
+    }
+
+    #[test]
+    fn bundled_ffmpeg_locator_resolves_bin_dir_and_exe_names() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let bin_dir = dir.path().join("bin");
+        fs::create_dir_all(&bin_dir)?;
+        let ffmpeg_path = bin_dir.join("ffmpeg.exe");
+        let ffprobe_path = bin_dir.join("ffprobe.exe");
+        fs::write(&ffmpeg_path, [])?;
+        fs::write(&ffprobe_path, [])?;
+        let locator = BundledFfmpegLocator::new(dir.path());
+        let project = text_project();
+
+        assert_eq!(locator.ffmpeg_path(&project)?, ffmpeg_path);
+        assert_eq!(locator.ffprobe_path()?, ffprobe_path);
+        Ok(())
+    }
+
+    #[test]
+    fn bundled_ffmpeg_locator_errors_when_missing() {
+        let dir = tempfile::tempdir().expect("temp dir を作成できる");
+        let locator = BundledFfmpegLocator::new(dir.path());
+
+        let err = locator
+            .ffprobe_path()
+            .expect_err("ffprobe が無い場合は error");
+
+        assert!(err.to_string().contains("同梱 ffprobe"));
     }
 
     #[test]
