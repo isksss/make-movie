@@ -5,6 +5,7 @@ use mm_plugin_runtime::{load_manifest, PluginManager, PluginReference};
 use mm_render::{
     render_frame, render_project, FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator,
 };
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -12,8 +13,16 @@ use std::path::{Path, PathBuf};
 #[command(name = "mm")]
 #[command(version)]
 pub struct Cli {
+    #[arg(long, value_enum)]
+    lang: Option<CliLanguage>,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum CliLanguage {
+    Ja,
+    En,
 }
 
 #[derive(Debug, Subcommand)]
@@ -97,18 +106,31 @@ pub fn run() -> Result<()> {
 }
 
 pub fn run_with(cli: Cli) -> Result<()> {
+    let messages = Messages::new(resolve_language(cli.lang));
     match cli.command {
-        Command::Build(args) => build(args),
-        Command::Validate(args) => validate(args),
-        Command::Preview(args) => preview(args),
-        Command::Cleanup(args) => cleanup(args),
-        Command::Package(args) => package(args),
-        Command::Doctor => doctor(),
-        Command::Plugin { command } => plugin(command),
+        Command::Build(args) => build(args, messages),
+        Command::Validate(args) => validate(args, messages),
+        Command::Preview(args) => preview(args, messages),
+        Command::Cleanup(args) => cleanup(args, messages),
+        Command::Package(args) => package(args, messages),
+        Command::Doctor => doctor(messages),
+        Command::Plugin { command } => plugin(command, messages),
     }
 }
 
-fn build(args: ProjectArgs) -> Result<()> {
+fn resolve_language(language: Option<CliLanguage>) -> CliLanguage {
+    language
+        .or_else(
+            || match env::var("MM_LANG").ok()?.to_ascii_lowercase().as_str() {
+                "en" | "english" => Some(CliLanguage::En),
+                "ja" | "jp" | "japanese" => Some(CliLanguage::Ja),
+                _ => None,
+            },
+        )
+        .unwrap_or(CliLanguage::Ja)
+}
+
+fn build(args: ProjectArgs, messages: Messages) -> Result<()> {
     let project = load_project(&args.project)?;
     let project_root = project_root(&args.project);
     validate_project(&project, &project_root)?;
@@ -118,19 +140,19 @@ fn build(args: ProjectArgs) -> Result<()> {
     let mut options = RenderOptions::new(project_root, output);
     options.backend = args.backend.into();
     render_project(&project, &options)?;
-    println!("build が完了しました: {}", options.output_path.display());
+    println!("{}: {}", messages.build_done, options.output_path.display());
     Ok(())
 }
 
-fn validate(args: ProjectArgs) -> Result<()> {
+fn validate(args: ProjectArgs, messages: Messages) -> Result<()> {
     let project = load_project(&args.project)?;
     let project_root = project_root(&args.project);
     validate_project(&project, project_root)?;
-    println!("validate が完了しました: {}", args.project.display());
+    println!("{}: {}", messages.validate_done, args.project.display());
     Ok(())
 }
 
-fn preview(args: PreviewArgs) -> Result<()> {
+fn preview(args: PreviewArgs, messages: Messages) -> Result<()> {
     let project = load_project(&args.project)?;
     let project_root = project_root(&args.project);
     validate_project(&project, &project_root)?;
@@ -154,46 +176,43 @@ fn preview(args: PreviewArgs) -> Result<()> {
     frame
         .save(&output)
         .with_context(|| format!("preview 画像を保存できません: {}", output.display()))?;
-    println!("preview を出力しました: {}", output.display());
+    println!("{}: {}", messages.preview_done, output.display());
     Ok(())
 }
 
-fn cleanup(args: ProjectRootArgs) -> Result<()> {
+fn cleanup(args: ProjectRootArgs, messages: Messages) -> Result<()> {
     let cache = args.project_root.join("cache");
     if cache.exists() {
         fs::remove_dir_all(&cache)
             .with_context(|| format!("cache を削除できません: {}", cache.display()))?;
     }
-    println!("cleanup が完了しました: {}", cache.display());
+    println!("{}: {}", messages.cleanup_done, cache.display());
     Ok(())
 }
 
-fn package(args: ProjectRootArgs) -> Result<()> {
+fn package(args: ProjectRootArgs, messages: Messages) -> Result<()> {
     let project = args.project_root.join("mm.toml");
     let loaded = load_project(&project)?;
     validate_project(&loaded, &args.project_root)?;
-    println!(
-        "package の検証が完了しました: {}",
-        args.project_root.display()
-    );
+    println!("{}: {}", messages.package_done, args.project_root.display());
     Ok(())
 }
 
-fn doctor() -> Result<()> {
+fn doctor(messages: Messages) -> Result<()> {
     let locator = SystemFfmpegLocator;
     println!("mm doctor");
     match locator.ffmpeg_path(&empty_project()) {
         Ok(path) => println!("ffmpeg: {}", path.display()),
-        Err(error) => println!("ffmpeg: 未検出 ({error})"),
+        Err(error) => println!("ffmpeg: {} ({error})", messages.not_found),
     }
     match locator.ffprobe_path() {
         Ok(path) => println!("ffprobe: {}", path.display()),
-        Err(error) => println!("ffprobe: 未検出 ({error})"),
+        Err(error) => println!("ffprobe: {} ({error})", messages.not_found),
     }
     Ok(())
 }
 
-fn plugin(command: PluginCommand) -> Result<()> {
+fn plugin(command: PluginCommand, messages: Messages) -> Result<()> {
     let manager = PluginManager::default();
     match command {
         PluginCommand::Install(args) => {
@@ -202,7 +221,7 @@ fn plugin(command: PluginCommand) -> Result<()> {
             } else {
                 let name = args
                     .name
-                    .context("plugin install には name または --manifest が必要です")?;
+                    .context(messages.plugin_install_requires_name_or_manifest)?;
                 manager.install(PluginReference::named(name))?;
             }
         }
@@ -210,6 +229,44 @@ fn plugin(command: PluginCommand) -> Result<()> {
         PluginCommand::Remove(args) => manager.remove(PluginReference::named(args.name))?,
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct Messages {
+    build_done: &'static str,
+    validate_done: &'static str,
+    preview_done: &'static str,
+    cleanup_done: &'static str,
+    package_done: &'static str,
+    not_found: &'static str,
+    plugin_install_requires_name_or_manifest: &'static str,
+}
+
+impl Messages {
+    fn new(language: CliLanguage) -> Self {
+        match language {
+            CliLanguage::Ja => Self {
+                build_done: "build が完了しました",
+                validate_done: "validate が完了しました",
+                preview_done: "preview を出力しました",
+                cleanup_done: "cleanup が完了しました",
+                package_done: "package の検証が完了しました",
+                not_found: "未検出",
+                plugin_install_requires_name_or_manifest:
+                    "plugin install には name または --manifest が必要です",
+            },
+            CliLanguage::En => Self {
+                build_done: "build completed",
+                validate_done: "validate completed",
+                preview_done: "preview exported",
+                cleanup_done: "cleanup completed",
+                package_done: "package validation completed",
+                not_found: "not found",
+                plugin_install_requires_name_or_manifest:
+                    "plugin install requires name or --manifest",
+            },
+        }
+    }
 }
 
 fn project_root(project_path: &Path) -> PathBuf {
@@ -259,6 +316,13 @@ mod tests {
             Command::Build(args) => assert!(matches!(args.backend, CliRenderBackend::Gpu)),
             _ => panic!("build command として parse されていません"),
         }
+    }
+
+    #[test]
+    fn cli_parses_language_option() {
+        let cli = Cli::try_parse_from(["mm", "--lang", "en", "doctor"]).unwrap();
+
+        assert!(matches!(resolve_language(cli.lang), CliLanguage::En));
     }
 
     #[test]

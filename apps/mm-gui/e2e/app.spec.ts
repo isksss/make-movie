@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+async function useEnglish(page: Page) {
+  await page.getByLabel("Language").selectOption("en");
+}
 
 test("主要ペインとプレビュー描画を確認できる", async ({ page }) => {
   await page.goto("/");
@@ -31,8 +36,25 @@ test("主要ペインとプレビュー描画を確認できる", async ({ page 
     .toBe(true);
 });
 
+test("Languageで日本語と英語を切り替えられる", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("アセット")).toBeVisible();
+  await expect(page.getByText("プロパティ")).toBeVisible();
+
+  await useEnglish(page);
+
+  await expect(page.getByText("Assets")).toBeVisible();
+  await expect(page.getByText("Property", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Language").selectOption("ja");
+  await expect(page.getByText("アセット")).toBeVisible();
+  await expect(page.getByText("プロパティ")).toBeVisible();
+});
+
 test("プレビュー操作とタイムライン選択がUIに反映される", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page.getByRole("button", { name: "Next frame" }).click();
   await expect(page.getByText("0.03s")).toBeVisible();
@@ -52,6 +74,7 @@ test("プレビュー操作とタイムライン選択がUIに反映される", 
 
 test("プロパティ編集をUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page
     .getByRole("region", { name: "Timeline" })
@@ -69,6 +92,7 @@ test("プロパティ編集をUndo/Redoできる", async ({ page }) => {
 
 test("選択中クリップを現在時刻でCutできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page
     .getByRole("region", { name: "Timeline" })
@@ -101,6 +125,7 @@ test("選択中クリップを現在時刻でCutできる", async ({ page }) => 
 
 test("選択中クリップをDuplicate/Deleteできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   const timeline = page.getByRole("region", { name: "Timeline" });
   await timeline.getByRole("button", { name: "Intro Image" }).click();
@@ -122,6 +147,7 @@ test("選択中クリップをDuplicate/Deleteできる", async ({ page }) => {
 
 test("PropertyからTransformを編集しUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page
     .getByRole("region", { name: "Timeline" })
@@ -151,6 +177,7 @@ test("PropertyからTransformを編集しUndo/Redoできる", async ({ page }) =
 
 test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page
     .getByRole("region", { name: "Timeline" })
@@ -178,6 +205,7 @@ test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page 
 
 test("PropertyからTransitionを編集しUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page
     .getByRole("region", { name: "Timeline" })
@@ -207,6 +235,7 @@ test("PropertyからTransitionを編集しUndo/Redoできる", async ({ page }) 
 
 test("PropertyからEffectを編集しUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page
     .getByRole("region", { name: "Timeline" })
@@ -242,6 +271,7 @@ test("PropertyからEffectを編集しUndo/Redoできる", async ({ page }) => {
 
 test("PropertyからKeyframeを編集しUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
+  await useEnglish(page);
 
   await page
     .getByRole("region", { name: "Timeline" })
