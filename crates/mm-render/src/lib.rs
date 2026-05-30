@@ -1,7 +1,12 @@
+use ab_glyph::{point, Font, FontArc, GlyphId, PxScale, ScaleFont};
 use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
-use mm_core::{Layer, LayerContent, Project, TextAlign, Transform};
+use mm_core::{
+    AssetKind, Layer, LayerContent, Project, SubtitleLayer, TextAlign, TextLayer, TextShadow,
+    TextStroke, Transform,
+};
 use std::env;
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -132,7 +137,7 @@ pub fn render_frame(project: &Project, options: &RenderOptions, time: f64) -> Re
     layers.sort_by_key(|layer| layer.z_index);
 
     for layer in layers {
-        draw_layer(project, options, &mut frame, layer)?;
+        draw_layer(project, options, &mut frame, layer, time)?;
     }
     Ok(frame)
 }
@@ -142,6 +147,7 @@ fn draw_layer(
     options: &RenderOptions,
     frame: &mut RgbaImage,
     layer: &Layer,
+    time: f64,
 ) -> Result<()> {
     match &layer.content {
         LayerContent::Image(content) => {
@@ -157,10 +163,39 @@ fn draw_layer(
             draw_image(frame, &image, layer.transform);
         }
         LayerContent::Text(content) => {
-            draw_text_placeholder(frame, &content.text, content.align, layer.transform);
+            let font = load_font(project, options, content.font_asset_id.as_deref())?;
+            draw_text_layer(frame, content, layer.transform, &font);
         }
         LayerContent::Subtitle(content) => {
-            draw_text_placeholder(frame, &content.asset_id, TextAlign::Center, layer.transform);
+            if let Some(text) = active_subtitle_text(project, options, content, time - layer.start)?
+            {
+                let font = load_font(project, options, None)?;
+                let subtitle = TextLayer {
+                    text,
+                    font_asset_id: None,
+                    font_size: resolved_subtitle_font_size(layer.transform),
+                    color: "#ffffff".to_string(),
+                    letter_spacing: 0.0,
+                    line_spacing: 1.2,
+                    stroke: Some(TextStroke {
+                        color: "#000000".to_string(),
+                        width: 2.0,
+                    }),
+                    shadow: Some(TextShadow {
+                        color: "#000000".to_string(),
+                        offset_x: 2.0,
+                        offset_y: 2.0,
+                        blur: 0.0,
+                    }),
+                    align: TextAlign::Center,
+                };
+                draw_text_layer(
+                    frame,
+                    &subtitle,
+                    subtitle_transform(frame, layer.transform),
+                    &font,
+                );
+            }
         }
         LayerContent::Video(_) | LayerContent::Audio(_) | LayerContent::Voice(_) => {}
     }
@@ -188,44 +223,340 @@ fn resolved_size(value: f32, fallback: u32) -> u32 {
     }
 }
 
-fn draw_text_placeholder(
-    frame: &mut RgbaImage,
-    text: &str,
-    align: TextAlign,
-    transform: Transform,
-) {
-    let width = resolved_size(
-        transform.width,
-        (text.chars().count() as u32).saturating_mul(18).max(120),
-    );
-    let height = resolved_size(transform.height, 64);
-    let x = match align {
-        TextAlign::Left => transform.x.round() as i32,
-        TextAlign::Center => transform.x.round() as i32 - (width as i32 / 2),
-        TextAlign::Right => transform.x.round() as i32 - width as i32,
-    };
-    let y = transform.y.round() as i32;
-    let mut rect = RgbaImage::from_pixel(
-        width,
-        height,
-        Rgba([245, 245, 245, (220.0 * transform.opacity) as u8]),
-    );
-    for (index, byte) in text.bytes().enumerate() {
-        let marker_x = 8 + (index as u32 * 9) % width.saturating_sub(8).max(1);
-        let marker_y = 8 + ((index as u32 * 9) / width.saturating_sub(8).max(1)) * 9;
-        if marker_y + 6 < height {
-            let color = Rgba([byte, 80, 180, 255]);
-            fill_rect(&mut rect, marker_x, marker_y, 6, 6, color);
+fn draw_text_layer(frame: &mut RgbaImage, text: &TextLayer, transform: Transform, font: &FontArc) {
+    let scale = PxScale::from(text.font_size * transform.scale.max(0.01));
+    let scaled = font.as_scaled(scale);
+    let line_height =
+        (scaled.ascent() - scaled.descent() + scaled.line_gap()) * text.line_spacing.max(0.1);
+    let lines = text.text.lines().collect::<Vec<_>>();
+    let base_color = parse_color(&text.color).unwrap_or(Rgba([255, 255, 255, 255]));
+    let origin_y = transform.y + scaled.ascent();
+
+    if let Some(shadow) = &text.shadow {
+        let color = parse_color(&shadow.color).unwrap_or(Rgba([0, 0, 0, 180]));
+        draw_text_lines(
+            frame,
+            font,
+            scale,
+            &lines,
+            text,
+            transform.x + shadow.offset_x,
+            origin_y + shadow.offset_y,
+            line_height,
+            color,
+            transform.opacity,
+        );
+    }
+
+    if let Some(stroke) = &text.stroke {
+        let color = parse_color(&stroke.color).unwrap_or(Rgba([0, 0, 0, 255]));
+        let radius = stroke.width.round().max(0.0) as i32;
+        for offset_y in -radius..=radius {
+            for offset_x in -radius..=radius {
+                if offset_x == 0 && offset_y == 0 {
+                    continue;
+                }
+                draw_text_lines(
+                    frame,
+                    font,
+                    scale,
+                    &lines,
+                    text,
+                    transform.x + offset_x as f32,
+                    origin_y + offset_y as f32,
+                    line_height,
+                    color,
+                    transform.opacity,
+                );
+            }
         }
     }
-    alpha_blend(frame, &rect, x, y, transform.opacity);
+
+    draw_text_lines(
+        frame,
+        font,
+        scale,
+        &lines,
+        text,
+        transform.x,
+        origin_y,
+        line_height,
+        base_color,
+        transform.opacity,
+    );
 }
 
-fn fill_rect(image: &mut RgbaImage, x: u32, y: u32, width: u32, height: u32, color: Rgba<u8>) {
-    for px in x..x.saturating_add(width).min(image.width()) {
-        for py in y..y.saturating_add(height).min(image.height()) {
-            image.put_pixel(px, py, color);
+#[allow(clippy::too_many_arguments)]
+fn draw_text_lines(
+    frame: &mut RgbaImage,
+    font: &FontArc,
+    scale: PxScale,
+    lines: &[&str],
+    layer: &TextLayer,
+    x: f32,
+    y: f32,
+    line_height: f32,
+    color: Rgba<u8>,
+    opacity: f32,
+) {
+    for (line_index, line) in lines.iter().enumerate() {
+        let line_width = measure_text(font, scale, line, layer.letter_spacing);
+        let line_x = match layer.align {
+            TextAlign::Left => x,
+            TextAlign::Center => x - line_width / 2.0,
+            TextAlign::Right => x - line_width,
+        };
+        let line_y = y + line_index as f32 * line_height;
+        draw_text_run(
+            frame,
+            font,
+            scale,
+            line,
+            line_x,
+            line_y,
+            layer.letter_spacing,
+            color,
+            opacity,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_text_run(
+    frame: &mut RgbaImage,
+    font: &FontArc,
+    scale: PxScale,
+    text: &str,
+    x: f32,
+    baseline_y: f32,
+    letter_spacing: f32,
+    color: Rgba<u8>,
+    opacity: f32,
+) {
+    let scaled = font.as_scaled(scale);
+    let mut pen_x = x;
+    for character in text.chars() {
+        let glyph_id = scaled.glyph_id(character);
+        let glyph = glyph_id.with_scale_and_position(scale, point(pen_x, baseline_y));
+        if let Some(outlined) = font.outline_glyph(glyph) {
+            let bounds = outlined.px_bounds();
+            outlined.draw(|glyph_x, glyph_y, coverage| {
+                let pixel_x = bounds.min.x as i32 + glyph_x as i32;
+                let pixel_y = bounds.min.y as i32 + glyph_y as i32;
+                blend_pixel(frame, pixel_x, pixel_y, color, coverage * opacity);
+            });
         }
+        pen_x += scaled.h_advance(glyph_id) + letter_spacing;
+    }
+}
+
+fn measure_text(font: &FontArc, scale: PxScale, text: &str, letter_spacing: f32) -> f32 {
+    let scaled = font.as_scaled(scale);
+    let mut width = 0.0;
+    let mut count: usize = 0;
+    for character in text.chars() {
+        let glyph_id: GlyphId = scaled.glyph_id(character);
+        width += scaled.h_advance(glyph_id);
+        count += 1;
+    }
+    width + letter_spacing * count.saturating_sub(1) as f32
+}
+
+fn blend_pixel(frame: &mut RgbaImage, x: i32, y: i32, color: Rgba<u8>, alpha: f32) {
+    if x < 0 || y < 0 || x >= frame.width() as i32 || y >= frame.height() as i32 {
+        return;
+    }
+    let alpha = (f32::from(color[3]) / 255.0 * alpha).clamp(0.0, 1.0);
+    let destination = frame.get_pixel_mut(x as u32, y as u32);
+    for channel in 0..3 {
+        destination[channel] = ((f32::from(color[channel]) * alpha)
+            + (f32::from(destination[channel]) * (1.0 - alpha)))
+            .round() as u8;
+    }
+    destination[3] = 255;
+}
+
+fn parse_color(value: &str) -> Option<Rgba<u8>> {
+    let hex = value.strip_prefix('#')?;
+    let parse_pair = |index| u8::from_str_radix(&hex[index..index + 2], 16).ok();
+    match hex.len() {
+        6 => Some(Rgba([parse_pair(0)?, parse_pair(2)?, parse_pair(4)?, 255])),
+        8 => Some(Rgba([
+            parse_pair(0)?,
+            parse_pair(2)?,
+            parse_pair(4)?,
+            parse_pair(6)?,
+        ])),
+        _ => None,
+    }
+}
+
+fn load_font(
+    project: &Project,
+    options: &RenderOptions,
+    font_asset_id: Option<&str>,
+) -> Result<FontArc> {
+    let font_path = font_asset_id
+        .and_then(|asset_id| {
+            project
+                .assets
+                .iter()
+                .find(|asset| asset.id == asset_id && asset.kind == AssetKind::Font)
+        })
+        .map(|asset| options.project_root.join(&asset.path))
+        .or_else(system_font_path)
+        .context("利用可能なフォントが見つかりません")?;
+    let bytes = fs::read(&font_path)
+        .with_context(|| format!("フォントを読み込めません: {}", font_path.display()))?;
+    FontArc::try_from_vec(bytes)
+        .map_err(|_| anyhow::anyhow!("フォントを parse できません: {}", font_path.display()))
+}
+
+fn system_font_path() -> Option<PathBuf> {
+    let candidates = [
+        "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf",
+        "/usr/share/fonts/gnu-free/FreeSans.otf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+    ];
+    candidates
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.exists())
+}
+
+fn active_subtitle_text(
+    project: &Project,
+    options: &RenderOptions,
+    content: &SubtitleLayer,
+    local_time: f64,
+) -> Result<Option<String>> {
+    let asset = project
+        .assets
+        .iter()
+        .find(|asset| asset.id == content.asset_id)
+        .with_context(|| format!("字幕 asset が見つかりません: {}", content.asset_id))?;
+    let path = options.project_root.join(&asset.path);
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("字幕ファイルを読み込めません: {}", path.display()))?;
+    let cues = parse_subtitles(&text);
+    Ok(cues
+        .into_iter()
+        .find(|cue| cue.start <= local_time && local_time < cue.end)
+        .map(|cue| cue.text))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SubtitleCue {
+    start: f64,
+    end: f64,
+    text: String,
+}
+
+fn parse_subtitles(input: &str) -> Vec<SubtitleCue> {
+    if input
+        .lines()
+        .any(|line| line.trim_start().starts_with("Dialogue:"))
+    {
+        return parse_ass(input);
+    }
+    parse_srt_or_vtt(input)
+}
+
+fn parse_srt_or_vtt(input: &str) -> Vec<SubtitleCue> {
+    let normalized = input.replace("\r\n", "\n");
+    normalized
+        .split("\n\n")
+        .filter_map(|block| {
+            let mut lines = block
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty() && *line != "WEBVTT");
+            let first = lines.next()?;
+            let timing = if first.contains("-->") {
+                first
+            } else {
+                lines.next()?
+            };
+            let (start, end) = parse_time_range(timing)?;
+            let text = lines.collect::<Vec<_>>().join("\n");
+            if text.is_empty() {
+                None
+            } else {
+                Some(SubtitleCue { start, end, text })
+            }
+        })
+        .collect()
+}
+
+fn parse_ass(input: &str) -> Vec<SubtitleCue> {
+    input
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let body = line.strip_prefix("Dialogue:")?.trim();
+            let fields = body.splitn(10, ',').collect::<Vec<_>>();
+            if fields.len() < 10 {
+                return None;
+            }
+            let start = parse_timestamp(fields[1].trim())?;
+            let end = parse_timestamp(fields[2].trim())?;
+            let text = fields[9]
+                .replace("\\N", "\n")
+                .replace("\\n", "\n")
+                .replace("{\\i1}", "")
+                .replace("{\\i0}", "");
+            Some(SubtitleCue { start, end, text })
+        })
+        .collect()
+}
+
+fn parse_time_range(value: &str) -> Option<(f64, f64)> {
+    let mut parts = value.split("-->");
+    let start = parse_timestamp(parts.next()?.trim())?;
+    let end = parse_timestamp(parts.next()?.split_whitespace().next()?)?;
+    Some((start, end))
+}
+
+fn parse_timestamp(value: &str) -> Option<f64> {
+    let normalized = value.replace(',', ".");
+    let parts = normalized.split(':').collect::<Vec<_>>();
+    match parts.as_slice() {
+        [minutes, seconds] => {
+            let minutes = minutes.parse::<f64>().ok()?;
+            let seconds = seconds.parse::<f64>().ok()?;
+            Some(minutes * 60.0 + seconds)
+        }
+        [hours, minutes, seconds] => {
+            let hours = hours.parse::<f64>().ok()?;
+            let minutes = minutes.parse::<f64>().ok()?;
+            let seconds = seconds.parse::<f64>().ok()?;
+            Some(hours * 3600.0 + minutes * 60.0 + seconds)
+        }
+        _ => None,
+    }
+}
+
+fn subtitle_transform(frame: &RgbaImage, transform: Transform) -> Transform {
+    if transform.width > 0.0 || transform.height > 0.0 || transform.x != 0.0 || transform.y != 0.0 {
+        return transform;
+    }
+    Transform {
+        x: frame.width() as f32 / 2.0,
+        y: frame.height() as f32 * 0.82,
+        width: frame.width() as f32 * 0.9,
+        height: 80.0,
+        scale: 1.0,
+        rotation: 0.0,
+        opacity: 1.0,
+    }
+}
+
+fn resolved_subtitle_font_size(transform: Transform) -> f32 {
+    if transform.height > 0.0 {
+        (transform.height * 0.55).clamp(18.0, 72.0)
+    } else {
+        32.0
     }
 }
 
@@ -254,7 +585,9 @@ fn alpha_blend(frame: &mut RgbaImage, overlay: &RgbaImage, x: i32, y: i32, opaci
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mm_core::{AssetMode, ProjectSettings, TextLayer, Track, TrackKind};
+    use mm_core::{
+        Asset, AssetKind, AssetMode, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
+    };
 
     fn text_project() -> Project {
         Project {
@@ -280,9 +613,12 @@ mod tests {
                     duration: 1.0,
                     z_index: 1,
                     content: LayerContent::Text(TextLayer {
-                        text: "テスト".to_string(),
+                        text: "Test\nTitle".to_string(),
+                        font_asset_id: None,
                         font_size: 48.0,
                         color: "#ffffff".to_string(),
+                        letter_spacing: 0.0,
+                        line_spacing: 1.1,
                         stroke: None,
                         shadow: None,
                         align: TextAlign::Center,
@@ -313,7 +649,7 @@ mod tests {
 
         let frame = render_frame(&project, &options, 0.5)?;
 
-        assert_ne!(frame.get_pixel(160, 90), &options.background);
+        assert!(has_non_background_pixel(&frame, options.background));
         Ok(())
     }
 
@@ -338,5 +674,77 @@ mod tests {
 
         assert_eq!(path, PathBuf::from("/tmp/ffmpeg"));
         Ok(())
+    }
+
+    #[test]
+    fn parse_srt_subtitle_cues() {
+        let cues = parse_subtitles(
+            "1\n00:00:00,000 --> 00:00:01,500\nHello\n\n2\n00:00:02,000 --> 00:00:03,000\nWorld\n",
+        );
+
+        assert_eq!(cues.len(), 2);
+        assert_eq!(cues[0].start, 0.0);
+        assert_eq!(cues[0].end, 1.5);
+        assert_eq!(cues[0].text, "Hello");
+    }
+
+    #[test]
+    fn parse_vtt_subtitle_cues() {
+        let cues = parse_subtitles("WEBVTT\n\n00:00:00.500 --> 00:00:01.000\nHello VTT\n");
+
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].start, 0.5);
+        assert_eq!(cues[0].text, "Hello VTT");
+    }
+
+    #[test]
+    fn parse_ass_subtitle_cues() {
+        let cues = parse_subtitles(
+            "[Events]\nDialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,Hello\\NASS\n",
+        );
+
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].start, 1.0);
+        assert_eq!(cues[0].end, 2.5);
+        assert_eq!(cues[0].text, "Hello\nASS");
+    }
+
+    #[test]
+    fn render_frame_draws_active_subtitle() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let subtitle_path = dir.path().join("media/subtitle/main.srt");
+        std::fs::create_dir_all(subtitle_path.parent().unwrap())?;
+        std::fs::write(
+            &subtitle_path,
+            "1\n00:00:00,000 --> 00:00:01,000\nSubtitle text\n",
+        )?;
+        let mut project = text_project();
+        project.assets.push(Asset {
+            id: "subtitle".to_string(),
+            kind: AssetKind::Subtitle,
+            path: PathBuf::from("media/subtitle/main.srt"),
+        });
+        project.tracks[0].layers[0].content = LayerContent::Subtitle(SubtitleLayer {
+            asset_id: "subtitle".to_string(),
+        });
+        project.tracks[0].layers[0].transform = Transform {
+            x: 160.0,
+            y: 120.0,
+            width: 260.0,
+            height: 48.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        let options = RenderOptions::new(dir.path(), "output.mp4");
+
+        let frame = render_frame(&project, &options, 0.5)?;
+
+        assert!(has_non_background_pixel(&frame, options.background));
+        Ok(())
+    }
+
+    fn has_non_background_pixel(frame: &RgbaImage, background: Rgba<u8>) -> bool {
+        frame.pixels().any(|pixel| pixel != &background)
     }
 }
