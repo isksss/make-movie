@@ -25,6 +25,7 @@ toml = "0.8"
 which = "7"
 pollster = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+sha2 = "0.10"
 wgpu = "25"
 wasmtime = { version = "45", features = ["component-model"] }
 wat = "1.251.0"
