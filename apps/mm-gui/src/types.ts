@@ -32,6 +32,7 @@ export type EasingKind =
   | "bounce"
   | "elastic";
 export type TextAlignKind = "left" | "center" | "right";
+export type TtsProviderKind = "voicevox" | "aivis_speech" | "coeiro_ink";
 
 export interface ProjectSettings {
   title: string;
@@ -75,6 +76,7 @@ export interface TimelineLayer {
   mask: MaskKind;
   fit: FitMode;
   text: TextLayerStyle;
+  voice: VoiceLayerSettings;
   transition: LayerTransition;
   effects: LayerEffect[];
   animations: LayerAnimation[];
@@ -101,6 +103,15 @@ export interface TextShadowStyle {
   offsetX: number;
   offsetY: number;
   blur: number;
+}
+
+export interface VoiceLayerSettings {
+  provider: TtsProviderKind;
+  speaker: string;
+  text: string;
+  speed: number;
+  pitch: number;
+  emotion: string;
 }
 
 export interface LayerTransform {
@@ -245,6 +256,20 @@ export function textLayerStyle(overrides: Partial<TextLayerStyle> = {}): TextLay
     align: "center",
     stroke: { color: "#000000", width: 0 },
     shadow: { color: "#000000", offsetX: 0, offsetY: 0, blur: 0 },
+    ...overrides,
+  };
+}
+
+export function voiceLayerSettings(
+  overrides: Partial<VoiceLayerSettings> = {},
+): VoiceLayerSettings {
+  return {
+    provider: "voicevox",
+    speaker: "ずんだもん",
+    text: "",
+    speed: 1,
+    pitch: 0,
+    emotion: "neutral",
     ...overrides,
   };
 }

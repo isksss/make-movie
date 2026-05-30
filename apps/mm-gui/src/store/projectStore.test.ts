@@ -119,6 +119,36 @@ describe("projectStore", () => {
     expect(layer?.text.fontSize).toBe(72);
   });
 
+  it("Voice layer TTS設定を更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerVoice("voice-main", {
+      provider: "aivis_speech",
+      speaker: "四国めたん",
+      text: "更新後の文章",
+      speed: 1.4,
+      pitch: 0.2,
+      emotion: "happy",
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "voice-main");
+    expect(layer?.label).toBe("更新後の文章");
+    expect(layer?.voice).toMatchObject({
+      provider: "aivis_speech",
+      speaker: "四国めたん",
+      text: "更新後の文章",
+      speed: 1.4,
+      pitch: 0.2,
+      emotion: "happy",
+    });
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "voice-main");
+    expect(layer?.voice.text).toBe("今日のニュースを解説します。");
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "voice-main");
+    expect(layer?.voice.speed).toBe(1.4);
+  });
+
   it("layer を指定時刻でCutしUndo/Redoできる", () => {
     useProjectStore.getState().splitLayer("intro-image", 2.5);
 

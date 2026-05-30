@@ -6,6 +6,7 @@ import {
   layerTransform,
   layerTransition,
   textLayerStyle,
+  voiceLayerSettings,
 } from "../types";
 import type {
   Asset,
@@ -20,6 +21,7 @@ import type {
   TextLayerStyle,
   TimelineLayer,
   TtsState,
+  VoiceLayerSettings,
 } from "../types";
 
 interface ProjectSnapshot {
@@ -53,6 +55,7 @@ interface ProjectStore {
     visual: Partial<{ crop: Partial<CropRect>; mask: MaskKind; fit: FitMode }>,
   ) => void;
   updateLayerText: (id: string, text: Partial<TextLayerStyle>) => void;
+  updateLayerVoice: (id: string, voice: Partial<VoiceLayerSettings>) => void;
   updateLayerTransition: (id: string, transition: Partial<LayerTransition>) => void;
   updateLayerEffect: (id: string, effect: Partial<LayerEffect>) => void;
   updateLayerAnimation: (id: string, animation: Partial<LayerAnimation>) => void;
@@ -103,6 +106,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "none",
       text: textLayerStyle({ text: "Title Text", fontSize: 64 }),
+      voice: voiceLayerSettings(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -122,6 +126,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "contain",
       text: textLayerStyle(),
+      voice: voiceLayerSettings(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -141,6 +146,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "none",
       text: textLayerStyle(),
+      voice: voiceLayerSettings(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -160,6 +166,9 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "none",
       text: textLayerStyle(),
+      voice: voiceLayerSettings({
+        text: "今日のニュースを解説します。",
+      }),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -179,6 +188,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "none",
       text: textLayerStyle(),
+      voice: voiceLayerSettings(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -393,6 +403,27 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                   ...layer.text.shadow,
                   ...text.shadow,
                 },
+              },
+            };
+          }),
+        },
+      })),
+    ),
+  updateLayerVoice: (id, voice) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            return {
+              ...layer,
+              label: voice.text ?? layer.label,
+              voice: {
+                ...layer.voice,
+                ...voice,
               },
             };
           }),
