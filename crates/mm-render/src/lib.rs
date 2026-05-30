@@ -2,8 +2,8 @@ use ab_glyph::{point, Font, FontArc, GlyphId, PxScale, ScaleFont};
 use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
-    AssetKind, Layer, LayerContent, Project, SubtitleLayer, TextAlign, TextLayer, TextShadow,
-    TextStroke, Transform,
+    AssetKind, AudioLayer, Layer, LayerContent, Project, SubtitleLayer, TextAlign, TextLayer,
+    TextShadow, TextStroke, Transform, VideoLayer,
 };
 use std::env;
 use std::fs;
@@ -134,26 +134,14 @@ fn encode_with_ffmpeg(
             .with_context(|| format!("出力先ディレクトリを作成できません: {}", parent.display()))?;
     }
 
+    let media_plan = MediaPlan::new(project, options)?;
+    let mut ffmpeg_args = base_ffmpeg_args(width, height, fps);
+    ffmpeg_args.extend(media_plan.input_args());
+    ffmpeg_args.extend(media_plan.output_args(project, options));
+    ffmpeg_args.push(options.output_path.display().to_string());
+
     let mut child = Command::new(ffmpeg)
-        .args([
-            "-y",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgba",
-            "-s",
-            &format!("{width}x{height}"),
-            "-r",
-            &fps.to_string(),
-            "-i",
-            "-",
-            "-an",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-        ])
-        .arg(&options.output_path)
+        .args(&ffmpeg_args)
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -163,12 +151,7 @@ fn encode_with_ffmpeg(
         let stdin = child.stdin.as_mut().context("ffmpeg stdin を開けません")?;
         for frame_index in 0..frame_count {
             let time = frame_index as f64 / f64::from(fps);
-            let frame = match &backend {
-                ActiveRenderBackend::Cpu => render_frame(project, options, time)?,
-                ActiveRenderBackend::GpuHybrid(renderer) => {
-                    render_frame_gpu_hybrid_with_renderer(project, options, time, renderer)?
-                }
-            };
+            let frame = render_frame_for_encode(project, options, time, &backend, media_plan.mode)?;
             stdin
                 .write_all(frame.as_raw())
                 .context("ffmpeg へ frame を書き込めません")?;
@@ -185,6 +168,322 @@ fn encode_with_ffmpeg(
         );
     }
     Ok(())
+}
+
+fn base_ffmpeg_args(width: u32, height: u32, fps: u32) -> Vec<String> {
+    vec![
+        "-y".to_string(),
+        "-f".to_string(),
+        "rawvideo".to_string(),
+        "-pix_fmt".to_string(),
+        "rgba".to_string(),
+        "-s".to_string(),
+        format!("{width}x{height}"),
+        "-r".to_string(),
+        fps.to_string(),
+        "-i".to_string(),
+        "-".to_string(),
+    ]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawFrameMode {
+    FullFrame,
+    TransparentOverlay,
+}
+
+#[derive(Debug, Clone)]
+struct MediaPlan {
+    mode: RawFrameMode,
+    video_layers: Vec<PlannedVideoLayer>,
+    audio_layers: Vec<PlannedAudioLayer>,
+}
+
+impl MediaPlan {
+    fn new(project: &Project, options: &RenderOptions) -> Result<Self> {
+        let mut video_layers = Vec::new();
+        let mut audio_layers = Vec::new();
+        for layer in project
+            .tracks
+            .iter()
+            .flat_map(|track| track.layers.iter())
+            .filter(|layer| layer.duration > 0.0)
+        {
+            match &layer.content {
+                LayerContent::Video(content) => {
+                    let path = asset_path(project, options, &content.asset_id, AssetKind::Video)?;
+                    video_layers.push(PlannedVideoLayer::new(project, layer, content, path));
+                }
+                LayerContent::Audio(content) => {
+                    let path = asset_path(project, options, &content.asset_id, AssetKind::Audio)?;
+                    audio_layers.push(PlannedAudioLayer::new(layer, content, path));
+                }
+                LayerContent::Voice(_) => {}
+                LayerContent::Image(_) | LayerContent::Text(_) | LayerContent::Subtitle(_) => {}
+            }
+        }
+        video_layers.sort_by_key(|layer| layer.z_index);
+        audio_layers.sort_by(|left, right| left.start.total_cmp(&right.start));
+        let mode = if video_layers.is_empty() {
+            RawFrameMode::FullFrame
+        } else {
+            RawFrameMode::TransparentOverlay
+        };
+        Ok(Self {
+            mode,
+            video_layers,
+            audio_layers,
+        })
+    }
+
+    fn input_args(&self) -> Vec<String> {
+        self.video_layers
+            .iter()
+            .map(|layer| &layer.path)
+            .chain(self.audio_layers.iter().map(|layer| &layer.path))
+            .flat_map(|path| ["-i".to_string(), path.display().to_string()])
+            .collect()
+    }
+
+    fn output_args(&self, project: &Project, options: &RenderOptions) -> Vec<String> {
+        let mut args = Vec::new();
+        let filter_complex = self.filter_complex(project, options.background);
+        if let Some(filter_complex) = filter_complex {
+            args.extend(["-filter_complex".to_string(), filter_complex]);
+        }
+        args.extend(["-map".to_string(), "[vout]".to_string()]);
+        if self.audio_layers.is_empty() {
+            args.push("-an".to_string());
+        } else {
+            args.extend(["-map".to_string(), "[aout]".to_string()]);
+        }
+        args.extend([
+            "-c:v".to_string(),
+            "libx264".to_string(),
+            "-pix_fmt".to_string(),
+            "yuv420p".to_string(),
+        ]);
+        if !self.audio_layers.is_empty() {
+            args.extend([
+                "-c:a".to_string(),
+                "aac".to_string(),
+                "-ar".to_string(),
+                project.settings.sample_rate.to_string(),
+                "-ac".to_string(),
+                "2".to_string(),
+            ]);
+        }
+        args.extend([
+            "-shortest".to_string(),
+            "-t".to_string(),
+            project.settings.duration.to_string(),
+        ]);
+        args
+    }
+
+    fn filter_complex(&self, project: &Project, background: Rgba<u8>) -> Option<String> {
+        let mut filters = Vec::new();
+        let mut video_cursor = 1usize;
+        if self.video_layers.is_empty() {
+            filters.push("[0:v]format=rgba[vout]".to_string());
+        } else {
+            filters.push(format!(
+                "color=c=0x{:02x}{:02x}{:02x}:s={}x{}:r={}:d={}[base0]",
+                background[0],
+                background[1],
+                background[2],
+                project.settings.width,
+                project.settings.height,
+                project.settings.fps,
+                project.settings.duration
+            ));
+            let mut base_label = "base0".to_string();
+            for (layer_index, layer) in self.video_layers.iter().enumerate() {
+                let input_index = video_cursor;
+                video_cursor += 1;
+                let video_label = format!("video{layer_index}");
+                let next_base_label = format!("base{}", layer_index + 1);
+                filters.push(layer.video_filter(input_index, &video_label));
+                filters.push(format!(
+                    "[{base_label}][{video_label}]overlay=x={}:y={}:eof_action=pass[{next_base_label}]",
+                    layer.x, layer.y
+                ));
+                base_label = next_base_label;
+            }
+            filters.push("[0:v]format=rgba[overlay]".to_string());
+            filters.push(format!(
+                "[{base_label}][overlay]overlay=x=0:y=0:format=auto:eof_action=pass[vout]"
+            ));
+        }
+
+        let audio_input_offset = 1 + self.video_layers.len();
+        let audio_labels = self
+            .audio_layers
+            .iter()
+            .enumerate()
+            .map(|(index, layer)| {
+                let input_index = audio_input_offset + index;
+                let label = format!("audio{index}");
+                filters.push(layer.audio_filter(input_index, &label));
+                format!("[{label}]")
+            })
+            .collect::<Vec<_>>();
+        if !audio_labels.is_empty() {
+            filters.push(format!(
+                "{}amix=inputs={}:duration=longest:normalize=0,atrim=0:{}[aout]",
+                audio_labels.join(""),
+                audio_labels.len(),
+                project.settings.duration
+            ));
+        }
+
+        Some(filters.join(";"))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PlannedVideoLayer {
+    path: PathBuf,
+    start: f64,
+    duration: f64,
+    z_index: i32,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    opacity: f32,
+    trim_start: f64,
+    trim_end: Option<f64>,
+}
+
+impl PlannedVideoLayer {
+    fn new(project: &Project, layer: &Layer, content: &VideoLayer, path: PathBuf) -> Self {
+        let width = if layer.transform.width > 0.0 {
+            layer.transform.width.round() as u32
+        } else {
+            project.settings.width
+        };
+        let height = if layer.transform.height > 0.0 {
+            layer.transform.height.round() as u32
+        } else {
+            project.settings.height
+        };
+        Self {
+            path,
+            start: layer.start,
+            duration: layer.duration,
+            z_index: layer.z_index,
+            x: layer.transform.x.round() as i32,
+            y: layer.transform.y.round() as i32,
+            width,
+            height,
+            opacity: layer.transform.opacity.clamp(0.0, 1.0),
+            trim_start: content.trim_start.unwrap_or(0.0).max(0.0),
+            trim_end: content.trim_end,
+        }
+    }
+
+    fn video_filter(&self, input_index: usize, label: &str) -> String {
+        let trim_end = self
+            .trim_end
+            .unwrap_or(self.trim_start + self.duration)
+            .max(self.trim_start);
+        format!(
+            "[{input_index}:v]trim=start={}:end={},setpts=PTS-STARTPTS+{}/TB,scale={}:{},format=rgba,colorchannelmixer=aa={}[{label}]",
+            self.trim_start,
+            trim_end,
+            self.start,
+            self.width,
+            self.height,
+            self.opacity
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PlannedAudioLayer {
+    path: PathBuf,
+    start: f64,
+    duration: f64,
+    trim_start: f64,
+    trim_end: Option<f64>,
+}
+
+impl PlannedAudioLayer {
+    fn new(layer: &Layer, content: &AudioLayer, path: PathBuf) -> Self {
+        Self {
+            path,
+            start: layer.start,
+            duration: layer.duration,
+            trim_start: content.trim_start.unwrap_or(0) as f64 / 1000.0,
+            trim_end: content.trim_end.map(|value| value as f64 / 1000.0),
+        }
+    }
+
+    fn audio_filter(&self, input_index: usize, label: &str) -> String {
+        let trim_end = self
+            .trim_end
+            .unwrap_or(self.trim_start + self.duration)
+            .max(self.trim_start);
+        let delay_ms = (self.start.max(0.0) * 1000.0).round() as u64;
+        format!(
+            "[{input_index}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS,adelay={delay_ms}:all=1[{label}]",
+            self.trim_start, trim_end
+        )
+    }
+}
+
+fn asset_path(
+    project: &Project,
+    options: &RenderOptions,
+    asset_id: &str,
+    kind: AssetKind,
+) -> Result<PathBuf> {
+    let asset = project
+        .assets
+        .iter()
+        .find(|asset| asset.id == asset_id && asset.kind == kind)
+        .with_context(|| format!("{kind:?} asset が見つかりません: {asset_id}"))?;
+    Ok(options.project_root.join(&asset.path))
+}
+
+fn render_frame_for_encode(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+    backend: &ActiveRenderBackend,
+    mode: RawFrameMode,
+) -> Result<RgbaImage> {
+    match (backend, mode) {
+        (ActiveRenderBackend::Cpu, RawFrameMode::FullFrame) => render_frame(project, options, time),
+        (ActiveRenderBackend::Cpu, RawFrameMode::TransparentOverlay) => {
+            render_transparent_overlay_frame(project, options, time)
+        }
+        (ActiveRenderBackend::GpuHybrid(renderer), RawFrameMode::FullFrame) => {
+            render_frame_gpu_hybrid_with_renderer(project, options, time, renderer)
+        }
+        (ActiveRenderBackend::GpuHybrid(renderer), RawFrameMode::TransparentOverlay) => {
+            let frame = renderer.background_frame(
+                project.settings.width,
+                project.settings.height,
+                Rgba([0, 0, 0, 0]),
+            )?;
+            render_frame_on_base(project, options, time, frame)
+        }
+    }
+}
+
+pub fn render_transparent_overlay_frame(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+) -> Result<RgbaImage> {
+    let frame = RgbaImage::from_pixel(
+        project.settings.width,
+        project.settings.height,
+        Rgba([0, 0, 0, 0]),
+    );
+    render_frame_on_base(project, options, time, frame)
 }
 
 pub fn render_frame(project: &Project, options: &RenderOptions, time: f64) -> Result<RgbaImage> {
@@ -831,7 +1130,8 @@ fn alpha_blend(frame: &mut RgbaImage, overlay: &RgbaImage, x: i32, y: i32, opaci
 mod tests {
     use super::*;
     use mm_core::{
-        Asset, AssetKind, AssetMode, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
+        Asset, AssetKind, AssetMode, AudioLayer, ProjectSettings, SubtitleLayer, TextLayer, Track,
+        TrackKind, VideoLayer,
     };
 
     fn text_project() -> Project {
@@ -1027,6 +1327,177 @@ mod tests {
         let frame = render_frame(&project, &options, 0.5)?;
 
         assert!(has_non_background_pixel(&frame, options.background));
+        Ok(())
+    }
+
+    #[test]
+    fn render_project_muxes_video_and_audio_layers_when_ffmpeg_is_available() -> Result<()> {
+        let Ok(ffmpeg) = which::which("ffmpeg") else {
+            return Ok(());
+        };
+        let Ok(ffprobe) = which::which("ffprobe") else {
+            return Ok(());
+        };
+        let dir = tempfile::tempdir()?;
+        let video_path = dir.path().join("media/video/source.mp4");
+        let audio_path = dir.path().join("media/audio/tone.wav");
+        std::fs::create_dir_all(video_path.parent().unwrap())?;
+        std::fs::create_dir_all(audio_path.parent().unwrap())?;
+        let video_status = Command::new(&ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=10:duration=0.5",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&video_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !video_status.success() {
+            return Ok(());
+        }
+        let audio_status = Command::new(&ffmpeg)
+            .args(["-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.5"])
+            .arg(&audio_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !audio_status.success() {
+            return Ok(());
+        }
+        let output_path = dir.path().join("output/movie.mp4");
+        let project = Project {
+            settings: ProjectSettings {
+                title: "メディア".to_string(),
+                width: 64,
+                height: 64,
+                fps: 10,
+                sample_rate: 48000,
+                duration: 0.5,
+                output: PathBuf::from("output/movie.mp4"),
+                asset_mode: AssetMode::Copy,
+                ffmpeg: Some(ffmpeg),
+            },
+            assets: vec![
+                Asset {
+                    id: "video".to_string(),
+                    kind: AssetKind::Video,
+                    path: PathBuf::from("media/video/source.mp4"),
+                },
+                Asset {
+                    id: "audio".to_string(),
+                    kind: AssetKind::Audio,
+                    path: PathBuf::from("media/audio/tone.wav"),
+                },
+            ],
+            tracks: vec![
+                Track {
+                    id: "v1".to_string(),
+                    name: "V1".to_string(),
+                    kind: TrackKind::Video,
+                    layers: vec![
+                        Layer {
+                            id: "video".to_string(),
+                            start: 0.0,
+                            duration: 0.5,
+                            z_index: 0,
+                            content: LayerContent::Video(VideoLayer {
+                                asset_id: "video".to_string(),
+                                crop: None,
+                                trim_start: Some(0.0),
+                                trim_end: Some(0.5),
+                                fit: None,
+                            }),
+                            transform: Transform {
+                                x: 0.0,
+                                y: 0.0,
+                                width: 64.0,
+                                height: 64.0,
+                                scale: 1.0,
+                                rotation: 0.0,
+                                opacity: 1.0,
+                            },
+                            effects: vec![],
+                            animations: vec![],
+                            transition: None,
+                        },
+                        Layer {
+                            id: "label".to_string(),
+                            start: 0.0,
+                            duration: 0.5,
+                            z_index: 10,
+                            content: LayerContent::Text(TextLayer {
+                                text: "mm".to_string(),
+                                font_asset_id: None,
+                                font_size: 18.0,
+                                color: "#ffffff".to_string(),
+                                letter_spacing: 0.0,
+                                line_spacing: 1.0,
+                                stroke: None,
+                                shadow: None,
+                                align: TextAlign::Center,
+                            }),
+                            transform: Transform {
+                                x: 32.0,
+                                y: 28.0,
+                                width: 64.0,
+                                height: 20.0,
+                                scale: 1.0,
+                                rotation: 0.0,
+                                opacity: 1.0,
+                            },
+                            effects: vec![],
+                            animations: vec![],
+                            transition: None,
+                        },
+                    ],
+                },
+                Track {
+                    id: "a1".to_string(),
+                    name: "A1".to_string(),
+                    kind: TrackKind::Audio,
+                    layers: vec![Layer {
+                        id: "audio".to_string(),
+                        start: 0.0,
+                        duration: 0.5,
+                        z_index: 0,
+                        content: LayerContent::Audio(AudioLayer {
+                            asset_id: "audio".to_string(),
+                            trim_start: Some(0),
+                            trim_end: Some(500),
+                        }),
+                        transform: Transform::default(),
+                        effects: vec![],
+                        animations: vec![],
+                        transition: None,
+                    }],
+                },
+            ],
+            scenes: vec![],
+            plugins: vec![],
+        };
+        let options = RenderOptions::new(dir.path(), &output_path);
+
+        render_project(&project, &options)?;
+
+        let stream_output = Command::new(ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&output_path)
+            .output()?;
+        let streams = String::from_utf8_lossy(&stream_output.stdout);
+        assert!(streams.lines().any(|line| line == "video"));
+        assert!(streams.lines().any(|line| line == "audio"));
         Ok(())
     }
 
