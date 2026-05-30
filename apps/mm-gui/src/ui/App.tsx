@@ -9,6 +9,8 @@ import {
   Settings,
   SkipBack,
   SkipForward,
+  Redo2,
+  Undo2,
   Wand2,
 } from "lucide-react";
 import { useState } from "react";
@@ -32,6 +34,10 @@ export function App() {
     selectLayer,
     moveLayer,
     updateTtsText,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useProjectStore();
   const preview = usePreviewStore();
   const [commandStatus, setCommandStatus] = useState("Ready");
@@ -88,6 +94,12 @@ export function App() {
             title="Build movie"
           >
             <Wand2 size={18} />
+          </button>
+          <button disabled={!canUndo} onClick={undo} title="Undo">
+            <Undo2 size={18} />
+          </button>
+          <button disabled={!canRedo} onClick={redo} title="Redo">
+            <Redo2 size={18} />
           </button>
         </div>
         <div aria-live="polite" className="command-status">
