@@ -133,6 +133,14 @@ pub fn run() {
 mod tests {
     use super::*;
     use mm_core::AssetKind;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned")
+    }
 
     #[test]
     fn project_commands_load_save_and_import_asset() {
@@ -174,6 +182,7 @@ mod tests {
 
     #[test]
     fn plugin_commands_install_update_and_remove() {
+        let _guard = env_lock();
         let dir = tempfile::tempdir().expect("temp dir を作成できる");
         env::set_var("MM_PLUGIN_DIR", dir.path().join("plugins"));
         env::set_var("MM_PLUGIN_LOCK", dir.path().join("mm.lock"));
@@ -190,6 +199,7 @@ mod tests {
 
     #[test]
     fn plugin_command_installs_configured_plugins_to_project_lock() {
+        let _guard = env_lock();
         let dir = tempfile::tempdir().expect("temp dir を作成できる");
         let plugin_dir = dir.path().join("plugins");
         let project_path = dir.path().join("mm.toml");
