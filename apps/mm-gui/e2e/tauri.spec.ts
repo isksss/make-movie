@@ -232,3 +232,37 @@ test("Assetsペインへのdropでassetとlayerを取り込める", async ({ pag
     },
   ]);
 });
+
+test("Plugin Managerからplugin操作を呼び出せる", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("region", { name: "プラグイン管理" })).toBeVisible();
+  await page.getByRole("button", { name: "インストール VOICEVOX" }).click();
+  await expect(page.getByText("プラグインをインストールしました")).toBeVisible();
+
+  await page.getByRole("button", { name: "更新 AivisSpeech" }).click();
+  await expect(page.getByText("プラグインを更新しました")).toBeVisible();
+
+  await page.getByRole("button", { name: "削除 Template Pack" }).click();
+  await expect(page.getByText("プラグインを削除しました")).toBeVisible();
+
+  const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
+  expect(calls).toEqual([
+    { cmd: "install_plugin", args: { name: "VOICEVOX" } },
+    { cmd: "update_plugin", args: { name: "AivisSpeech" } },
+    { cmd: "remove_plugin", args: { name: "Template Pack" } },
+  ]);
+});
+
+test("Plugin Managerは英語表示でもplugin操作を呼び出せる", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("言語").selectOption("en");
+  await expect(page.getByRole("region", { name: "Plugin Manager" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Install VOICEVOX" }).click();
+  await expect(page.getByText("Plugin installed")).toBeVisible();
+
+  const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
+  expect(calls).toEqual([{ cmd: "install_plugin", args: { name: "VOICEVOX" } }]);
+});
