@@ -4,6 +4,16 @@ import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
+  {
+    ignores: [
+      "coverage",
+      "dist",
+      "node_modules",
+      "playwright-report",
+      "src-tauri/target",
+      "test-results",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,
@@ -13,8 +23,5 @@ export default tseslint.config(
       ecmaVersion: 2022,
       globals: globals.browser,
     },
-  },
-  {
-    ignores: ["dist", "src-tauri/target"],
   },
 );

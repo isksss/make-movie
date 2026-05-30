@@ -1,3 +1,13 @@
+import type {
+  AnimatedProperty,
+  EasingKind,
+  EffectKind,
+  FitMode,
+  MaskKind,
+  TextAlignKind,
+  TransitionKind,
+} from "../types";
+
 export type Locale = "ja" | "en";
 
 export const messages = {
@@ -172,3 +182,139 @@ export const messages = {
     delete: "Delete",
   },
 } as const;
+
+export const optionLabels: Record<
+  Locale,
+  {
+    textAlign: Record<TextAlignKind, string>;
+    mask: Record<MaskKind, string>;
+    fit: Record<FitMode, string>;
+    transition: Record<TransitionKind, string>;
+    effect: Record<EffectKind, string>;
+    animatedProperty: Record<AnimatedProperty, string>;
+    easing: Record<EasingKind, string>;
+  }
+> = {
+  ja: {
+    textAlign: {
+      left: "左揃え",
+      center: "中央揃え",
+      right: "右揃え",
+    },
+    mask: {
+      none: "なし",
+      circle: "円",
+      rounded_rect: "角丸四角",
+      ellipse: "楕円",
+    },
+    fit: {
+      none: "なし",
+      contain: "全体表示",
+      cover: "画面に合わせて切り抜き",
+      stretch: "引き伸ばし",
+      blur_background: "ぼかし背景",
+    },
+    transition: {
+      none: "なし",
+      crossfade: "クロスフェード",
+      wipe: "ワイプ",
+      push: "押し出し",
+      zoom: "ズーム",
+      blur: "ぼかし",
+      flash: "フラッシュ",
+    },
+    effect: {
+      none: "なし",
+      fade_in: "フェードイン",
+      fade_out: "フェードアウト",
+      blur: "ぼかし",
+      zoom: "ズーム",
+      slide: "スライド",
+      brightness: "明るさ",
+      contrast: "コントラスト",
+      saturation: "彩度",
+      pixelate: "ピクセル化",
+      motion_blur: "モーションブラー",
+    },
+    animatedProperty: {
+      none: "なし",
+      x: "X",
+      y: "Y",
+      scale: "拡大率",
+      rotation: "回転",
+      opacity: "不透明度",
+      width: "幅",
+      height: "高さ",
+    },
+    easing: {
+      linear: "リニア",
+      ease_in: "イーズイン",
+      ease_out: "イーズアウト",
+      ease_in_out: "イーズインアウト",
+      ease_out_back: "戻り付きイーズアウト",
+      bounce: "バウンス",
+      elastic: "エラスティック",
+    },
+  },
+  en: {
+    textAlign: {
+      left: "Left",
+      center: "Center",
+      right: "Right",
+    },
+    mask: {
+      none: "None",
+      circle: "Circle",
+      rounded_rect: "Rounded rectangle",
+      ellipse: "Ellipse",
+    },
+    fit: {
+      none: "None",
+      contain: "Contain",
+      cover: "Cover",
+      stretch: "Stretch",
+      blur_background: "Blur background",
+    },
+    transition: {
+      none: "None",
+      crossfade: "Crossfade",
+      wipe: "Wipe",
+      push: "Push",
+      zoom: "Zoom",
+      blur: "Blur",
+      flash: "Flash",
+    },
+    effect: {
+      none: "None",
+      fade_in: "Fade in",
+      fade_out: "Fade out",
+      blur: "Blur",
+      zoom: "Zoom",
+      slide: "Slide",
+      brightness: "Brightness",
+      contrast: "Contrast",
+      saturation: "Saturation",
+      pixelate: "Pixelate",
+      motion_blur: "Motion blur",
+    },
+    animatedProperty: {
+      none: "None",
+      x: "X",
+      y: "Y",
+      scale: "Scale",
+      rotation: "Rotation",
+      opacity: "Opacity",
+      width: "Width",
+      height: "Height",
+    },
+    easing: {
+      linear: "Linear",
+      ease_in: "Ease in",
+      ease_out: "Ease out",
+      ease_in_out: "Ease in out",
+      ease_out_back: "Ease out back",
+      bounce: "Bounce",
+      elastic: "Elastic",
+    },
+  },
+};
