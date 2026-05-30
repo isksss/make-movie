@@ -754,6 +754,12 @@ fn save_manifest(resolved: &ResolvedPlugin) -> Result<()> {
     let path = resolved.install_dir.join("manifest.toml");
     let text = toml::to_string_pretty(&resolved.manifest)
         .context("plugin manifest serialize に失敗しました")?;
+    fs::create_dir_all(&resolved.install_dir).with_context(|| {
+        format!(
+            "plugin install dir を作成できません: {}",
+            resolved.install_dir.display()
+        )
+    })?;
     fs::write(&path, text).with_context(|| format!("manifest を保存できません: {}", path.display()))
 }
 

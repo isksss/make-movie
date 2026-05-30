@@ -1199,6 +1199,18 @@ export function App() {
           <div className="pane-heading">
             <Wand2 size={16} />
             <span>{t.plugins}</span>
+            <button
+              aria-label={t.installConfiguredPlugins}
+              onClick={() =>
+                runCommand(
+                  () => commands.installConfiguredPlugins(defaultProjectPath),
+                  t.configuredPluginsInstalled,
+                )
+              }
+              title={t.installConfiguredPlugins}
+            >
+              <Download size={16} />
+            </button>
           </div>
           <div className="plugin-list">
             {pluginNames.map((pluginName) => (
