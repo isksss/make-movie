@@ -72,6 +72,55 @@ describe("projectToml", () => {
     expect(toml).toContain("[[tracks.layers.animations.keyframes]]");
   });
 
+  it("Animation keyframeをTOMLからparseできる", () => {
+    const parsed = parseProjectToml(`
+[settings]
+title = "Animation"
+width = 1280
+height = 720
+fps = 30
+sample_rate = 48000
+duration = 3
+output = "output/animation.mp4"
+
+[[tracks]]
+id = "v1"
+name = "V1"
+kind = "video"
+
+[[tracks.layers]]
+id = "image"
+start = 0
+duration = 3
+z_index = 1
+
+[tracks.layers.content]
+type = "image"
+asset_id = "hero"
+
+[[tracks.layers.animations]]
+property = "crop_width"
+easing = "ease_out"
+
+[[tracks.layers.animations.keyframes]]
+time = 0
+value = 120
+
+[[tracks.layers.animations.keyframes]]
+time = 1
+value = 240
+`);
+
+    expect(parsed.layers[0].animations[0]).toMatchObject({
+      property: "crop_width",
+      easing: "ease_out",
+      keyframes: [
+        { time: 0, value: 120 },
+        { time: 1, value: 240 },
+      ],
+    });
+  });
+
   it("Text layer styleをTOMLへserializeできる", () => {
     const toml = serializeProjectToToml({
       ...initialProject,
