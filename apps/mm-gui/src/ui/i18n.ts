@@ -5,6 +5,7 @@ import type {
   FitMode,
   MaskKind,
   TextAlignKind,
+  TextGradientDirection,
   TransitionKind,
   TtsProviderKind,
   WipeShapeKind,
@@ -74,6 +75,10 @@ export const messages = {
     text: "テキスト",
     fontSize: "フォントサイズ",
     textColor: "文字色",
+    textGradient: "文字グラデーション",
+    gradientStartColor: "開始色",
+    gradientEndColor: "終了色",
+    gradientDirection: "方向",
     letterSpacing: "文字間隔",
     lineSpacing: "行間",
     textAlign: "文字揃え",
@@ -172,6 +177,10 @@ export const messages = {
     text: "Text",
     fontSize: "Font Size",
     textColor: "Text Color",
+    textGradient: "Text Gradient",
+    gradientStartColor: "Start Color",
+    gradientEndColor: "End Color",
+    gradientDirection: "Direction",
     letterSpacing: "Letter Spacing",
     lineSpacing: "Line Spacing",
     textAlign: "Text Align",
@@ -223,6 +232,7 @@ export const optionLabels: Record<
     animatedProperty: Record<AnimatedProperty, string>;
     easing: Record<EasingKind, string>;
     ttsProvider: Record<TtsProviderKind, string>;
+    gradientDirection: Record<TextGradientDirection, string>;
   }
 > = {
   ja: {
@@ -295,6 +305,10 @@ export const optionLabels: Record<
       aivis_speech: "AivisSpeech",
       coeiro_ink: "CoeiroInk",
     },
+    gradientDirection: {
+      vertical: "縦",
+      horizontal: "横",
+    },
   },
   en: {
     textAlign: {
@@ -365,6 +379,10 @@ export const optionLabels: Record<
       voicevox: "VOICEVOX",
       aivis_speech: "AivisSpeech",
       coeiro_ink: "CoeiroInk",
+    },
+    gradientDirection: {
+      vertical: "Vertical",
+      horizontal: "Horizontal",
     },
   },
 };

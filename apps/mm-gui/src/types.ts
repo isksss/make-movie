@@ -33,6 +33,7 @@ export type EasingKind =
   | "bounce"
   | "elastic";
 export type TextAlignKind = "left" | "center" | "right";
+export type TextGradientDirection = "vertical" | "horizontal";
 export type TtsProviderKind = "voicevox" | "aivis_speech" | "coeiro_ink";
 export type AssetMode = "copy" | "link";
 
@@ -98,6 +99,14 @@ export interface TextLayerStyle {
   align: TextAlignKind;
   stroke: TextStrokeStyle;
   shadow: TextShadowStyle;
+  gradient: TextGradientStyle;
+}
+
+export interface TextGradientStyle {
+  enabled: boolean;
+  startColor: string;
+  endColor: string;
+  direction: TextGradientDirection;
 }
 
 export interface TextStrokeStyle {
@@ -279,6 +288,7 @@ export function textLayerStyle(overrides: Partial<TextLayerStyle> = {}): TextLay
     align: "center",
     stroke: { color: "#000000", width: 0 },
     shadow: { color: "#000000", offsetX: 0, offsetY: 0, blur: 0 },
+    gradient: { enabled: false, startColor: "#ffffff", endColor: "#ffcc00", direction: "vertical" },
     ...overrides,
   };
 }

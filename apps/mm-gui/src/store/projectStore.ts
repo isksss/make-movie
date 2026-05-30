@@ -418,6 +418,10 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                   ...layer.text.shadow,
                   ...text.shadow,
                 },
+                gradient: {
+                  ...layer.text.gradient,
+                  ...text.gradient,
+                },
               },
             };
           }),

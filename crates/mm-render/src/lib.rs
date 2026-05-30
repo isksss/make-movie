@@ -3,9 +3,9 @@ use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
     save_wav_audio, synthesize_with_default_provider, AnimatedProperty, Animation, AssetKind,
-    AudioLayer, Crop, Easing, Effect, FitMode, Layer, LayerContent, Mask, Project, SubtitleLayer,
-    SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke, Transform, Transition,
-    VideoLayer, VoiceLayer, WipeShape,
+    AudioLayer, Crop, Easing, Effect, FitMode, GradientDirection, Layer, LayerContent, Mask,
+    Project, SubtitleLayer, SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke,
+    Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
 use std::env;
 use std::fs;
@@ -826,6 +826,7 @@ fn draw_layer_content(
                         offset_y: 2.0,
                         blur: 0.0,
                     }),
+                    gradient: None,
                     align: TextAlign::Center,
                 };
                 draw_text_layer(
@@ -1699,6 +1700,7 @@ fn draw_text_layer_unrotated(
         (scaled.ascent() - scaled.descent() + scaled.line_gap()) * text.line_spacing.max(0.1);
     let lines = text.text.lines().collect::<Vec<_>>();
     let base_color = parse_color(&text.color).unwrap_or(Rgba([255, 255, 255, 255]));
+    let base_paint = text_paint(text, transform, base_color);
     let origin_y = transform.y + scaled.ascent();
 
     if let Some(shadow) = &text.shadow {
@@ -1712,7 +1714,7 @@ fn draw_text_layer_unrotated(
             transform.x + shadow.offset_x,
             origin_y + shadow.offset_y,
             line_height,
-            color,
+            TextPaint::Solid(color),
             transform.opacity,
         );
     }
@@ -1734,7 +1736,7 @@ fn draw_text_layer_unrotated(
                     transform.x + offset_x as f32,
                     origin_y + offset_y as f32,
                     line_height,
-                    color,
+                    TextPaint::Solid(color),
                     transform.opacity,
                 );
             }
@@ -1750,7 +1752,7 @@ fn draw_text_layer_unrotated(
         transform.x,
         origin_y,
         line_height,
-        base_color,
+        base_paint,
         transform.opacity,
     );
 }
@@ -1794,7 +1796,7 @@ fn draw_text_lines(
     x: f32,
     y: f32,
     line_height: f32,
-    color: Rgba<u8>,
+    paint: TextPaint,
     opacity: f32,
 ) {
     for (line_index, line) in lines.iter().enumerate() {
@@ -1813,7 +1815,7 @@ fn draw_text_lines(
             line_x,
             line_y,
             layer.letter_spacing,
-            color,
+            paint,
             opacity,
         );
     }
@@ -1828,7 +1830,7 @@ fn draw_text_run(
     x: f32,
     baseline_y: f32,
     letter_spacing: f32,
-    color: Rgba<u8>,
+    paint: TextPaint,
     opacity: f32,
 ) {
     let scaled = font.as_scaled(scale);
@@ -1841,11 +1843,74 @@ fn draw_text_run(
             outlined.draw(|glyph_x, glyph_y, coverage| {
                 let pixel_x = bounds.min.x as i32 + glyph_x as i32;
                 let pixel_y = bounds.min.y as i32 + glyph_y as i32;
+                let color = text_paint_color(paint, pixel_x, pixel_y);
                 blend_pixel(frame, pixel_x, pixel_y, color, coverage * opacity);
             });
         }
         pen_x += scaled.h_advance(glyph_id) + letter_spacing;
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TextPaint {
+    Solid(Rgba<u8>),
+    Gradient {
+        start: Rgba<u8>,
+        end: Rgba<u8>,
+        direction: GradientDirection,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+}
+
+fn text_paint(text: &TextLayer, transform: Transform, fallback: Rgba<u8>) -> TextPaint {
+    let Some(gradient) = &text.gradient else {
+        return TextPaint::Solid(fallback);
+    };
+    TextPaint::Gradient {
+        start: parse_color(&gradient.start_color).unwrap_or(fallback),
+        end: parse_color(&gradient.end_color).unwrap_or(fallback),
+        direction: gradient.direction,
+        x: transform.x,
+        y: transform.y,
+        width: transform.width.max(1.0),
+        height: transform.height.max(text.font_size.max(1.0)),
+    }
+}
+
+fn text_paint_color(paint: TextPaint, x: i32, y: i32) -> Rgba<u8> {
+    match paint {
+        TextPaint::Solid(color) => color,
+        TextPaint::Gradient {
+            start,
+            end,
+            direction,
+            x: origin_x,
+            y: origin_y,
+            width,
+            height,
+        } => {
+            let progress = match direction {
+                GradientDirection::Horizontal => (x as f32 - origin_x) / width,
+                GradientDirection::Vertical => (y as f32 - origin_y) / height,
+            }
+            .clamp(0.0, 1.0);
+            lerp_color(start, end, progress)
+        }
+    }
+}
+
+fn lerp_color(start: Rgba<u8>, end: Rgba<u8>, progress: f32) -> Rgba<u8> {
+    let mut color = [0u8; 4];
+    for channel in 0..4 {
+        color[channel] = (f32::from(start[channel])
+            + (f32::from(end[channel]) - f32::from(start[channel])) * progress)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+    }
+    Rgba(color)
 }
 
 fn measure_text(font: &FontArc, scale: PxScale, text: &str, letter_spacing: f32) -> f32 {
@@ -2091,8 +2156,9 @@ mod tests {
     use super::*;
     use mm_core::{
         AnimatedProperty, Animation, Asset, AssetKind, AssetMode, AudioLayer, Crop, Easing, Effect,
-        ImageLayer, Keyframe, Mask, ProjectSettings, SubtitleLayer, TextLayer, TextShadow, Track,
-        TrackKind, Transition, TtsProviderKind, VideoLayer, VoiceLayer, WipeBorder, WipeShape,
+        GradientDirection, ImageLayer, Keyframe, Mask, ProjectSettings, SubtitleLayer,
+        TextGradient, TextLayer, TextShadow, Track, TrackKind, Transition, TtsProviderKind,
+        VideoLayer, VoiceLayer, WipeBorder, WipeShape,
     };
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -2130,6 +2196,7 @@ mod tests {
                         line_spacing: 1.1,
                         stroke: None,
                         shadow: None,
+                        gradient: None,
                         align: TextAlign::Center,
                     }),
                     transform: Transform {
@@ -2159,6 +2226,31 @@ mod tests {
         let frame = render_frame(&project, &options, 0.5)?;
 
         assert!(has_non_background_pixel(&frame, options.background));
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_applies_text_gradient() -> Result<()> {
+        let mut project = text_project();
+        let LayerContent::Text(text) = &mut project.tracks[0].layers[0].content else {
+            panic!("text layer ではありません");
+        };
+        text.gradient = Some(TextGradient {
+            start_color: "#ff0000".to_string(),
+            end_color: "#0000ff".to_string(),
+            direction: GradientDirection::Vertical,
+        });
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame(&project, &options, 0.5)?;
+        let text_pixels = frame
+            .pixels()
+            .filter(|pixel| **pixel != options.background)
+            .collect::<Vec<_>>();
+
+        assert!(text_pixels.iter().any(|pixel| pixel[0] > pixel[2]));
+        assert!(text_pixels.iter().any(|pixel| pixel[2] > pixel[0]));
         Ok(())
     }
 
@@ -2836,6 +2928,7 @@ mod tests {
                                 line_spacing: 1.0,
                                 stroke: None,
                                 shadow: None,
+                                gradient: None,
                                 align: TextAlign::Center,
                             }),
                             transform: Transform {

@@ -97,6 +97,12 @@ describe("projectStore", () => {
       align: "left",
       stroke: { color: "#111111", width: 3 },
       shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+      gradient: {
+        enabled: true,
+        startColor: "#ff0000",
+        endColor: "#0000ff",
+        direction: "horizontal",
+      },
     });
 
     let layer = useProjectStore.getState().project.layers.find((item) => item.id === "title");
@@ -108,6 +114,12 @@ describe("projectStore", () => {
       align: "left",
       stroke: { color: "#111111", width: 3 },
       shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+      gradient: {
+        enabled: true,
+        startColor: "#ff0000",
+        endColor: "#0000ff",
+        direction: "horizontal",
+      },
     });
 
     useProjectStore.getState().undo();

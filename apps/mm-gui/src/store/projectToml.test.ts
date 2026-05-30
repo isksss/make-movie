@@ -87,6 +87,12 @@ describe("projectToml", () => {
             align: "left",
             stroke: { color: "#111111", width: 3 },
             shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+            gradient: {
+              enabled: true,
+              startColor: "#ff0000",
+              endColor: "#0000ff",
+              direction: "horizontal",
+            },
           },
         },
       ],
@@ -99,6 +105,9 @@ describe("projectToml", () => {
     expect(toml).toContain('align = "left"');
     expect(toml).toContain("[tracks.layers.content.stroke]");
     expect(toml).toContain("[tracks.layers.content.shadow]");
+    expect(toml).toContain("[tracks.layers.content.gradient]");
+    expect(toml).toContain('start_color = "#ff0000"');
+    expect(toml).toContain('direction = "horizontal"');
   });
 
   it("Image maskのradiusとSVG pathをTOMLへserializeできる", () => {
@@ -478,6 +487,11 @@ offset_x = 4
 offset_y = 5
 blur = 6
 
+[tracks.layers.content.gradient]
+start_color = "#ff0000"
+end_color = "#0000ff"
+direction = "vertical"
+
 [tracks.layers.transform]
 x = 0
 y = 0
@@ -497,6 +511,12 @@ opacity = 1
       align: "right",
       stroke: { color: "#111111", width: 3 },
       shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+      gradient: {
+        enabled: true,
+        startColor: "#ff0000",
+        endColor: "#0000ff",
+        direction: "vertical",
+      },
     });
   });
 
