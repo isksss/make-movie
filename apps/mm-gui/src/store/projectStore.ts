@@ -74,6 +74,8 @@ export const initialProject: ProjectState = {
     sampleRate: 48000,
     duration: 30,
     output: "output/movie.mp4",
+    assetMode: "copy",
+    ffmpeg: null,
   },
   assets: [
     { id: "intro", kind: "image", path: "media/image/intro.png" },

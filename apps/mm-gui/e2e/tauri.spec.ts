@@ -106,7 +106,8 @@ test.beforeEach(async ({ page }) => {
             "sample_rate = 48000",
             "duration = 1",
             'output = "output/movie.mp4"',
-            'asset_mode = "copy"',
+            'asset_mode = "link"',
+            'ffmpeg = "/opt/mm/ffmpeg"',
             "",
             "[[assets]]",
             'id = "hero"',
@@ -208,6 +209,8 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[tracks.layers]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('label = "Hero Layer"'));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('asset_id = "hero"'));
+  expect(calls[1].args.toml).toEqual(expect.stringContaining('asset_mode = "link"'));
+  expect(calls[1].args.toml).toEqual(expect.stringContaining('ffmpeg = "/opt/mm/ffmpeg"'));
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[plugin]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('repo = "gui-theme"'));
   expect(calls[3].args.toml).toEqual(expect.stringContaining('path = "media/image/import.png"'));

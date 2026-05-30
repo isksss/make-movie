@@ -33,6 +33,7 @@ export type EasingKind =
   | "elastic";
 export type TextAlignKind = "left" | "center" | "right";
 export type TtsProviderKind = "voicevox" | "aivis_speech" | "coeiro_ink";
+export type AssetMode = "copy" | "link";
 
 export interface ProjectSettings {
   title: string;
@@ -42,6 +43,8 @@ export interface ProjectSettings {
   sampleRate: number;
   duration: number;
   output: string;
+  assetMode: AssetMode;
+  ffmpeg: string | null;
 }
 
 export type PluginRepository = "github" | "gitlab" | "url" | "local";
