@@ -55,6 +55,8 @@ export interface TimelineLayer {
   contentKind: "video" | "image" | "audio" | "text" | "subtitle" | "voice";
   start: number;
   duration: number;
+  trimStart: number;
+  trimEnd: number;
   zIndex: number;
   transform: LayerTransform;
   crop: CropRect;

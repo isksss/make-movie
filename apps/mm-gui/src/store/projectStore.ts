@@ -35,6 +35,10 @@ interface ProjectStore {
   splitLayer: (id: string, time: number) => void;
   duplicateLayer: (id: string) => void;
   deleteLayer: (id: string) => void;
+  updateLayerTrim: (
+    id: string,
+    trim: Partial<Pick<TimelineLayer, "trimStart" | "trimEnd">>,
+  ) => void;
   updateLayerTransform: (id: string, transform: Partial<LayerTransform>) => void;
   updateLayerVisual: (
     id: string,
@@ -81,6 +85,8 @@ export const initialProject: ProjectState = {
       contentKind: "text",
       start: 0,
       duration: 4,
+      trimStart: 0,
+      trimEnd: 0,
       zIndex: 10,
       transform: layerTransform({ x: 140, y: 120, width: 800, height: 120 }),
       crop: cropRect(),
@@ -97,6 +103,8 @@ export const initialProject: ProjectState = {
       contentKind: "image",
       start: 0.5,
       duration: 7,
+      trimStart: 0,
+      trimEnd: 0,
       zIndex: 2,
       transform: layerTransform({ x: 120, y: 300, width: 840, height: 480 }),
       crop: cropRect(),
@@ -113,6 +121,8 @@ export const initialProject: ProjectState = {
       contentKind: "subtitle",
       start: 0,
       duration: 9,
+      trimStart: 0,
+      trimEnd: 0,
       zIndex: 12,
       transform: layerTransform({ x: 120, y: 1600, width: 840, height: 120 }),
       crop: cropRect(),
@@ -129,8 +139,28 @@ export const initialProject: ProjectState = {
       contentKind: "voice",
       start: 0,
       duration: 12,
+      trimStart: 0,
+      trimEnd: 0,
       zIndex: 0,
       transform: layerTransform({ x: 120, y: 1760, width: 840, height: 80 }),
+      crop: cropRect(),
+      mask: "none",
+      fit: "none",
+      transition: layerTransition(),
+      effects: [],
+      animations: [],
+    },
+    {
+      id: "voice-audio",
+      trackId: "a2",
+      label: "Voice Audio",
+      contentKind: "audio",
+      start: 0,
+      duration: 12,
+      trimStart: 0,
+      trimEnd: 0,
+      zIndex: 0,
+      transform: layerTransform({ x: 120, y: 1840, width: 840, height: 60 }),
       crop: cropRect(),
       mask: "none",
       fit: "none",
@@ -270,6 +300,17 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         selectedLayerId: nextSelection,
       };
     }),
+  updateLayerTrim: (id, trim) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map(
+            (layer): TimelineLayer => (layer.id === id ? { ...layer, ...trim } : layer),
+          ),
+        },
+      })),
+    ),
   updateLayerTransform: (id, transform) =>
     set((state) =>
       withHistory(state, () => ({
