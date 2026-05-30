@@ -388,20 +388,20 @@ describe("projectStore", () => {
 
   it("layer animation keyframe を更新しUndo/Redoできる", () => {
     useProjectStore.getState().updateLayerAnimation("intro-image", {
-      property: "opacity",
+      property: "crop_width",
       easing: "ease_in_out",
       keyframes: [
-        { time: 0, value: 0 },
-        { time: 1.5, value: 1 },
+        { time: 0, value: 120 },
+        { time: 1.5, value: 240 },
       ],
     });
 
     let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.animations[0]).toMatchObject({
-      property: "opacity",
+      property: "crop_width",
       easing: "ease_in_out",
     });
-    expect(layer?.animations[0]?.keyframes[1]).toEqual({ time: 1.5, value: 1 });
+    expect(layer?.animations[0]?.keyframes[1]).toEqual({ time: 1.5, value: 240 });
 
     useProjectStore.getState().undo();
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
@@ -409,7 +409,7 @@ describe("projectStore", () => {
 
     useProjectStore.getState().redo();
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
-    expect(layer?.animations[0]?.property).toBe("opacity");
+    expect(layer?.animations[0]?.property).toBe("crop_width");
 
     useProjectStore.getState().updateLayerAnimation("intro-image", { property: "none" });
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");

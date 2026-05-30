@@ -290,6 +290,10 @@ export const optionLabels: Record<
       opacity: "不透明度",
       width: "幅",
       height: "高さ",
+      crop_x: "クロップ X",
+      crop_y: "クロップ Y",
+      crop_width: "クロップ幅",
+      crop_height: "クロップ高さ",
     },
     easing: {
       linear: "リニア",
@@ -365,6 +369,10 @@ export const optionLabels: Record<
       opacity: "Opacity",
       width: "Width",
       height: "Height",
+      crop_x: "Crop X",
+      crop_y: "Crop Y",
+      crop_width: "Crop Width",
+      crop_height: "Crop Height",
     },
     easing: {
       linear: "Linear",

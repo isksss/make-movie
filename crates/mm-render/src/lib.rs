@@ -796,7 +796,10 @@ fn draw_layer_content(
             let image = image::open(&path)
                 .with_context(|| format!("画像を読み込めません: {}", path.display()))?
                 .to_rgba8();
-            let image = apply_crop(image, content.crop);
+            let image = apply_crop(
+                image,
+                resolve_layer_crop(layer, content.crop, time - layer.start),
+            );
             let image = apply_image_effects(image, &layer.effects);
             let image = apply_mask(image, content.mask.as_ref(), &options.project_root)?;
             draw_image(frame, &image, transform, content.fit);
@@ -1035,6 +1038,46 @@ fn resolve_layer_transform(layer: &Layer, local_time: f64) -> Transform {
     }
     let transform = apply_transform_effects(layer, local_time, transform);
     apply_transition_transform(layer, local_time, transform)
+}
+
+fn resolve_layer_crop(layer: &Layer, base: Option<Crop>, local_time: f64) -> Option<Crop> {
+    let mut crop = base.unwrap_or(Crop {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+    });
+    let mut changed = base.is_some();
+    for animation in &layer.animations {
+        if let Some(value) = resolve_animation_value(animation, local_time) {
+            match animation.property {
+                AnimatedProperty::CropX => {
+                    crop.x = value.round().max(0.0) as u32;
+                    changed = true;
+                }
+                AnimatedProperty::CropY => {
+                    crop.y = value.round().max(0.0) as u32;
+                    changed = true;
+                }
+                AnimatedProperty::CropWidth => {
+                    crop.width = value.round().max(0.0) as u32;
+                    changed = true;
+                }
+                AnimatedProperty::CropHeight => {
+                    crop.height = value.round().max(0.0) as u32;
+                    changed = true;
+                }
+                AnimatedProperty::X
+                | AnimatedProperty::Y
+                | AnimatedProperty::Scale
+                | AnimatedProperty::Rotation
+                | AnimatedProperty::Opacity
+                | AnimatedProperty::Width
+                | AnimatedProperty::Height => {}
+            }
+        }
+    }
+    changed.then_some(crop)
 }
 
 fn apply_transition_transform(
@@ -2333,6 +2376,57 @@ mod tests {
 
         assert_eq!(transform.x, 20.0);
         assert!((transform.opacity - 0.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn resolve_layer_crop_applies_crop_keyframes() {
+        let mut project = text_project();
+        let layer = &mut project.tracks[0].layers[0];
+        layer.animations.push(Animation {
+            property: AnimatedProperty::CropX,
+            easing: Easing::Linear,
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 0.0,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: 4.0,
+                },
+            ],
+        });
+        layer.animations.push(Animation {
+            property: AnimatedProperty::CropWidth,
+            easing: Easing::Linear,
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 8.0,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: 12.0,
+                },
+            ],
+        });
+
+        let crop = resolve_layer_crop(
+            layer,
+            Some(Crop {
+                x: 0,
+                y: 1,
+                width: 8,
+                height: 6,
+            }),
+            0.5,
+        )
+        .expect("crop が解決される");
+
+        assert_eq!(crop.x, 2);
+        assert_eq!(crop.y, 1);
+        assert_eq!(crop.width, 10);
+        assert_eq!(crop.height, 6);
     }
 
     #[test]

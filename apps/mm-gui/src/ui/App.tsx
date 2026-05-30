@@ -61,6 +61,10 @@ const animatedPropertyOptions = [
   "opacity",
   "width",
   "height",
+  "crop_x",
+  "crop_y",
+  "crop_width",
+  "crop_height",
 ] as const;
 const easingOptions = [
   "linear",
