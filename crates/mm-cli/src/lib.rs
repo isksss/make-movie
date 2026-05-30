@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use mm_core::{load_project, validate_project};
-use mm_plugin_runtime::{load_manifest, PluginManager, PluginReference};
+use mm_plugin_runtime::{
+    default_global_config_path, default_plugin_dir, load_manifest, PluginManager, PluginReference,
+};
 use mm_render::{
     render_frame, render_project, FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator,
 };
@@ -94,6 +96,10 @@ struct PluginInstallArgs {
     name: Option<String>,
     #[arg(long)]
     manifest: Option<PathBuf>,
+    #[arg(long, default_value = "mm.toml")]
+    project: PathBuf,
+    #[arg(long)]
+    global_config: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -316,17 +322,23 @@ fn doctor(messages: Messages) -> Result<()> {
     Ok(())
 }
 
-fn plugin(command: PluginCommand, messages: Messages) -> Result<()> {
+fn plugin(command: PluginCommand, _messages: Messages) -> Result<()> {
     let manager = PluginManager::default();
     match command {
         PluginCommand::Install(args) => {
             if let Some(path) = args.manifest {
                 manager.install_manifest(load_manifest(path)?)?;
-            } else {
-                let name = args
-                    .name
-                    .context(messages.plugin_install_requires_name_or_manifest)?;
+            } else if let Some(name) = args.name {
                 manager.install(PluginReference::named(name))?;
+            } else {
+                let project_manager = PluginManager::new(
+                    default_plugin_dir(),
+                    project_root(&args.project).join("mm.lock"),
+                );
+                let global_config = args
+                    .global_config
+                    .unwrap_or_else(default_global_config_path);
+                project_manager.install_configured_plugins(global_config, args.project)?;
             }
         }
         PluginCommand::Update(args) => manager.update(PluginReference::named(args.name))?,
@@ -343,7 +355,6 @@ struct Messages {
     cleanup_done: &'static str,
     package_done: &'static str,
     not_found: &'static str,
-    plugin_install_requires_name_or_manifest: &'static str,
 }
 
 impl Messages {
@@ -356,8 +367,6 @@ impl Messages {
                 cleanup_done: "cleanup が完了しました",
                 package_done: "package の検証が完了しました",
                 not_found: "未検出",
-                plugin_install_requires_name_or_manifest:
-                    "plugin install には name または --manifest が必要です",
             },
             CliLanguage::En => Self {
                 build_done: "build completed",
@@ -366,8 +375,6 @@ impl Messages {
                 cleanup_done: "cleanup completed",
                 package_done: "package validation completed",
                 not_found: "not found",
-                plugin_install_requires_name_or_manifest:
-                    "plugin install requires name or --manifest",
             },
         }
     }
@@ -568,6 +575,9 @@ const PLUGIN_INSTALL_HELP_JA: &str = r#"plugin をインストールする
 
 オプション:
       --manifest <MANIFEST>  plugin manifest のパス
+      --project <PROJECT>    project toml のパス [既定値: mm.toml]
+      --global-config <GLOBAL_CONFIG>
+                              global config のパス
   -h, --help                 ヘルプを表示する
 "#;
 
@@ -580,6 +590,9 @@ Arguments:
 
 Options:
       --manifest <MANIFEST>  Path to plugin manifest
+      --project <PROJECT>    Path to project toml [default: mm.toml]
+      --global-config <GLOBAL_CONFIG>
+                              Path to global config
   -h, --help                 Print help
 "#;
 
