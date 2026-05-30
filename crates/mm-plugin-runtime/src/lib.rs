@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -245,17 +246,60 @@ impl PluginManager {
         self.save_lock(&lock)
     }
 
-    pub fn update(&self, plugin: PluginReference) -> Result<()> {
+    pub fn install_manifest(&self, manifest: PluginManifest) -> Result<ResolvedPlugin> {
+        let resolved = self.resolve(manifest)?;
+        if resolved.install_dir.exists() {
+            fs::remove_dir_all(&resolved.install_dir).with_context(|| {
+                format!(
+                    "plugin install dir を初期化できません: {}",
+                    resolved.install_dir.display()
+                )
+            })?;
+        }
+        fs::create_dir_all(&resolved.install_dir).with_context(|| {
+            format!(
+                "plugin install dir を作成できません: {}",
+                resolved.install_dir.display()
+            )
+        })?;
+        install_component(&resolved)?;
+        save_manifest(&resolved)?;
+        let checksum = checksum_file(&resolved.component_path)?;
         let mut lock = self.load_lock()?;
-        let Some(entry) = lock
-            .plugin
-            .iter_mut()
-            .find(|entry| entry.name == plugin.name)
-        else {
+        upsert_lock(
+            &mut lock,
+            PluginLockEntry {
+                name: resolved.manifest.name.clone(),
+                version: resolved.manifest.version.clone(),
+                checksum,
+                path: resolved.install_dir.clone(),
+            },
+        );
+        self.save_lock(&lock)?;
+        self.verify(&resolved.manifest.name)?;
+        self.resolve(resolved.manifest)
+    }
+
+    pub fn update(&self, plugin: PluginReference) -> Result<()> {
+        let lock = self.load_lock()?;
+        let Some(entry) = lock.plugin.iter().find(|entry| entry.name == plugin.name) else {
             bail!("更新対象 plugin が lock に存在しません: {}", plugin.name);
         };
-        entry.checksum = "sha256:updated".to_string();
-        self.save_lock(&lock)
+        let manifest_path = entry.path.join("manifest.toml");
+        if !manifest_path.exists() {
+            let mut lock = lock;
+            let entry = lock
+                .plugin
+                .iter_mut()
+                .find(|entry| entry.name == plugin.name)
+                .expect("lock entry は直前に確認済み");
+            entry.checksum = "sha256:updated".to_string();
+            self.save_lock(&lock)?;
+            return Ok(());
+        }
+        let manifest = load_manifest(manifest_path)?;
+        self.install_manifest(manifest)?;
+        Ok(())
     }
 
     pub fn remove(&self, plugin: PluginReference) -> Result<()> {
@@ -286,6 +330,30 @@ impl PluginManager {
             install_dir,
             component_path,
         })
+    }
+
+    pub fn verify(&self, name: &str) -> Result<()> {
+        let lock = self.load_lock()?;
+        let Some(entry) = lock.plugin.iter().find(|entry| entry.name == name) else {
+            bail!("verify 対象 plugin が lock に存在しません: {name}");
+        };
+        let manifest = load_manifest(entry.path.join("manifest.toml"))?;
+        let resolved = self.resolve(manifest)?;
+        if !resolved.component_path.exists() {
+            bail!(
+                "plugin component が存在しません: {}",
+                resolved.component_path.display()
+            );
+        }
+        let checksum = checksum_file(&resolved.component_path)?;
+        if checksum != entry.checksum {
+            bail!(
+                "plugin checksum が一致しません: expected={}, actual={}",
+                entry.checksum,
+                checksum
+            );
+        }
+        Ok(())
     }
 
     pub fn load_lock(&self) -> Result<PluginLock> {
@@ -335,6 +403,133 @@ pub fn load_manifest(path: impl AsRef<Path>) -> Result<PluginManifest> {
     toml::from_str(&text).context("plugin manifest の parse に失敗しました")
 }
 
+fn install_component(resolved: &ResolvedPlugin) -> Result<()> {
+    match &resolved.manifest.source {
+        PluginSource::Local { path } => install_local_component(path, resolved),
+        PluginSource::Url { url, .. } => download_component(url, &resolved.component_path),
+        PluginSource::Github { .. } | PluginSource::Gitlab { .. } => {
+            let url = download_url(&resolved.manifest)?;
+            download_component(&url, &resolved.component_path)
+        }
+    }
+}
+
+fn install_local_component(source: &Path, resolved: &ResolvedPlugin) -> Result<()> {
+    if source.is_dir() {
+        copy_dir_recursive(source, &resolved.install_dir)?;
+        return Ok(());
+    }
+    if source.is_file() {
+        if let Some(parent) = resolved.component_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "plugin component dir を作成できません: {}",
+                    parent.display()
+                )
+            })?;
+        }
+        fs::copy(source, &resolved.component_path).with_context(|| {
+            format!(
+                "local plugin component をコピーできません: {} -> {}",
+                source.display(),
+                resolved.component_path.display()
+            )
+        })?;
+        return Ok(());
+    }
+    bail!("local plugin source が存在しません: {}", source.display())
+}
+
+fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
+    fs::create_dir_all(destination).with_context(|| {
+        format!(
+            "plugin install dir を作成できません: {}",
+            destination.display()
+        )
+    })?;
+    for entry in fs::read_dir(source)
+        .with_context(|| format!("plugin source dir を読めません: {}", source.display()))?
+    {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_dir_recursive(&source_path, &destination_path)?;
+        } else {
+            fs::copy(&source_path, &destination_path).with_context(|| {
+                format!(
+                    "plugin file をコピーできません: {} -> {}",
+                    source_path.display(),
+                    destination_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn download_component(url: &str, path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("download dir を作成できません: {}", parent.display()))?;
+    }
+    let bytes = reqwest::blocking::get(url)
+        .with_context(|| format!("plugin download request に失敗しました: {url}"))?
+        .error_for_status()
+        .with_context(|| format!("plugin download が失敗しました: {url}"))?
+        .bytes()
+        .with_context(|| format!("plugin download response を読み込めません: {url}"))?;
+    fs::write(path, bytes)
+        .with_context(|| format!("plugin component を保存できません: {}", path.display()))
+}
+
+fn save_manifest(resolved: &ResolvedPlugin) -> Result<()> {
+    let path = resolved.install_dir.join("manifest.toml");
+    let text = toml::to_string_pretty(&resolved.manifest)
+        .context("plugin manifest serialize に失敗しました")?;
+    fs::write(&path, text).with_context(|| format!("manifest を保存できません: {}", path.display()))
+}
+
+fn checksum_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("checksum 対象ファイルを読めません: {}", path.display()))?;
+    let digest = Sha256::digest(&bytes);
+    Ok(format!("sha256:{digest:x}"))
+}
+
+fn download_url(manifest: &PluginManifest) -> Result<String> {
+    let artifact = component_file_name(manifest)?;
+    match &manifest.source {
+        PluginSource::Github {
+            owner,
+            repo,
+            version,
+        } => Ok(format!(
+            "https://github.com/{owner}/{repo}/releases/download/{version}/{artifact}"
+        )),
+        PluginSource::Gitlab {
+            owner,
+            repo,
+            version,
+        } => Ok(format!(
+            "https://gitlab.com/{owner}/{repo}/-/releases/{version}/downloads/{artifact}"
+        )),
+        PluginSource::Url { url, .. } => Ok(url.clone()),
+        PluginSource::Local { path } => Ok(path.display().to_string()),
+    }
+}
+
+fn component_file_name(manifest: &PluginManifest) -> Result<String> {
+    let path = manifest
+        .component
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(format!("{}.wasm", manifest.name)));
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        bail!("plugin component file name が不正です: {}", path.display());
+    };
+    Ok(name.to_string())
+}
+
 fn upsert_lock(lock: &mut PluginLock, entry: PluginLockEntry) {
     if let Some(current) = lock
         .plugin
@@ -377,6 +572,9 @@ fn stable_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
 
     fn manifest() -> PluginManifest {
         PluginManifest {
@@ -422,6 +620,76 @@ mod tests {
         manager.remove(PluginReference::named("theme"))?;
         let lock = manager.load_lock()?;
         assert!(lock.plugin.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn manager_installs_local_manifest_and_verifies_checksum() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        fs::create_dir_all(&source)?;
+        fs::write(source.join("voicevox.wasm"), b"\0asmcomponent")?;
+        let manager = PluginManager::new(dir.path().join("plugins"), dir.path().join("mm.lock"));
+        let mut manifest = manifest();
+        manifest.source = PluginSource::Local {
+            path: source.clone(),
+        };
+
+        let resolved = manager.install_manifest(manifest)?;
+
+        assert!(resolved.component_path.exists());
+        assert!(resolved.install_dir.join("manifest.toml").exists());
+        manager.verify("voicevox")?;
+        let lock = manager.load_lock()?;
+        assert_eq!(lock.plugin.len(), 1);
+        assert_eq!(lock.plugin[0].version, "1.0.0");
+        assert!(lock.plugin[0].checksum.starts_with("sha256:"));
+
+        fs::write(source.join("voicevox.wasm"), b"\0asmcomponent-updated")?;
+        manager.update(PluginReference::named("voicevox"))?;
+        manager.verify("voicevox")?;
+
+        manager.remove(PluginReference::named("voicevox"))?;
+        assert!(!resolved.install_dir.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn manager_downloads_url_manifest_and_verifies_checksum() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let endpoint = start_download_mock(b"\0asm-url".to_vec());
+        let manager = PluginManager::new(dir.path().join("plugins"), dir.path().join("mm.lock"));
+        let mut manifest = manifest();
+        manifest.source = PluginSource::Url {
+            url: endpoint,
+            version: "1.0.0".to_string(),
+        };
+
+        let resolved = manager.install_manifest(manifest)?;
+
+        assert_eq!(fs::read(&resolved.component_path)?, b"\0asm-url");
+        manager.verify("voicevox")?;
+        Ok(())
+    }
+
+    #[test]
+    fn repository_download_urls_use_release_artifact() -> Result<()> {
+        let github = manifest();
+        assert_eq!(
+            download_url(&github)?,
+            "https://github.com/make-movie/voicevox/releases/download/1.0.0/voicevox.wasm"
+        );
+
+        let mut gitlab = manifest();
+        gitlab.source = PluginSource::Gitlab {
+            owner: "make-movie".to_string(),
+            repo: "voicevox".to_string(),
+            version: "1.0.0".to_string(),
+        };
+        assert_eq!(
+            download_url(&gitlab)?,
+            "https://gitlab.com/make-movie/voicevox/-/releases/1.0.0/downloads/voicevox.wasm"
+        );
         Ok(())
     }
 
@@ -488,5 +756,25 @@ mod tests {
         assert!(result.is_err());
         assert!(!runtime.loaded_plugins()[0].initialized);
         Ok(())
+    }
+
+    fn start_download_mock(body: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let size = stream.read(&mut request).unwrap();
+            let request_text = String::from_utf8_lossy(&request[..size]);
+            assert!(request_text.starts_with("GET /plugin.wasm"));
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/wasm\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(&body).unwrap();
+        });
+        format!("http://{address}/plugin.wasm")
     }
 }

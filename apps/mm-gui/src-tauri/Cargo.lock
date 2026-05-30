@@ -2739,7 +2739,9 @@ name = "mm-plugin-runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "reqwest 0.12.28",
  "serde",
+ "sha2",
  "toml 0.8.23",
  "wasmtime",
 ]

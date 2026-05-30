@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use mm_core::{load_project, validate_project};
-use mm_plugin_runtime::{PluginManager, PluginReference};
+use mm_plugin_runtime::{load_manifest, PluginManager, PluginReference};
 use mm_render::{render_project, FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -63,9 +63,16 @@ struct ProjectRootArgs {
 
 #[derive(Debug, Subcommand)]
 enum PluginCommand {
-    Install(PluginRefArgs),
+    Install(PluginInstallArgs),
     Update(PluginRefArgs),
     Remove(PluginRefArgs),
+}
+
+#[derive(Debug, Args)]
+struct PluginInstallArgs {
+    name: Option<String>,
+    #[arg(long)]
+    manifest: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -156,7 +163,16 @@ fn doctor() -> Result<()> {
 fn plugin(command: PluginCommand) -> Result<()> {
     let manager = PluginManager::default();
     match command {
-        PluginCommand::Install(args) => manager.install(PluginReference::named(args.name))?,
+        PluginCommand::Install(args) => {
+            if let Some(path) = args.manifest {
+                manager.install_manifest(load_manifest(path)?)?;
+            } else {
+                let name = args
+                    .name
+                    .context("plugin install には name または --manifest が必要です")?;
+                manager.install(PluginReference::named(name))?;
+            }
+        }
         PluginCommand::Update(args) => manager.update(PluginReference::named(args.name))?,
         PluginCommand::Remove(args) => manager.remove(PluginReference::named(args.name))?,
     }
@@ -209,6 +225,18 @@ mod tests {
         match cli.command {
             Command::Build(args) => assert!(matches!(args.backend, CliRenderBackend::Gpu)),
             _ => panic!("build command として parse されていません"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_plugin_install_manifest() {
+        let cli =
+            Cli::try_parse_from(["mm", "plugin", "install", "--manifest", "plugin.toml"]).unwrap();
+        match cli.command {
+            Command::Plugin {
+                command: PluginCommand::Install(args),
+            } => assert_eq!(args.manifest, Some(PathBuf::from("plugin.toml"))),
+            _ => panic!("plugin install command として parse されていません"),
         }
     }
 
