@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { cropRect, layerTransform } from "../types";
+import { cropRect, layerTransform, layerTransition } from "../types";
 import type {
   Asset,
   CropRect,
   FitMode,
+  LayerTransition,
   LayerTransform,
   MaskKind,
   ProjectState,
@@ -37,6 +38,7 @@ interface ProjectStore {
     id: string,
     visual: Partial<{ crop: Partial<CropRect>; mask: MaskKind; fit: FitMode }>,
   ) => void;
+  updateLayerTransition: (id: string, transition: Partial<LayerTransition>) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
   undo: () => void;
@@ -79,6 +81,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "none",
+      transition: layerTransition(),
     },
     {
       id: "intro-image",
@@ -92,6 +95,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "contain",
+      transition: layerTransition(),
     },
     {
       id: "subtitle-main",
@@ -105,6 +109,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "none",
+      transition: layerTransition(),
     },
     {
       id: "voice-main",
@@ -118,6 +123,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "none",
+      transition: layerTransition(),
     },
   ],
 };
@@ -290,6 +296,26 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                 : layer.crop,
               mask: visual.mask ?? layer.mask,
               fit: visual.fit ?? layer.fit,
+            };
+          }),
+        },
+      })),
+    ),
+  updateLayerTransition: (id, transition) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            return {
+              ...layer,
+              transition: {
+                ...layerTransition(layer.transition),
+                ...transition,
+              },
             };
           }),
         },
