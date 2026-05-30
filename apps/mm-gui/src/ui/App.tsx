@@ -19,7 +19,7 @@ import { useState } from "react";
 import { commands } from "../services/tauri";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
-import { layerTransform } from "../types";
+import { cropRect, layerTransform } from "../types";
 import type { ProjectState } from "../types";
 import { PreviewCanvas } from "./PreviewCanvas";
 
@@ -40,6 +40,7 @@ export function App() {
     duplicateLayer,
     deleteLayer,
     updateLayerTransform,
+    updateLayerVisual,
     updateTtsText,
     undo,
     redo,
@@ -51,6 +52,7 @@ export function App() {
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
+  const selectedCrop = selectedLayer ? cropRect(selectedLayer.crop) : null;
   const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
     try {
       await action();
@@ -299,6 +301,99 @@ export function App() {
                       type="number"
                       value={selectedTransform.opacity}
                     />
+                  </label>
+                  {selectedCrop ? (
+                    <>
+                      <label>
+                        Crop X
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerVisual(selectedLayer.id, {
+                              crop: { x: Number(event.target.value) },
+                            })
+                          }
+                          step={1}
+                          type="number"
+                          value={selectedCrop.x}
+                        />
+                      </label>
+                      <label>
+                        Crop Y
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerVisual(selectedLayer.id, {
+                              crop: { y: Number(event.target.value) },
+                            })
+                          }
+                          step={1}
+                          type="number"
+                          value={selectedCrop.y}
+                        />
+                      </label>
+                      <label>
+                        Crop Width
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerVisual(selectedLayer.id, {
+                              crop: { width: Number(event.target.value) },
+                            })
+                          }
+                          step={1}
+                          type="number"
+                          value={selectedCrop.width}
+                        />
+                      </label>
+                      <label>
+                        Crop Height
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerVisual(selectedLayer.id, {
+                              crop: { height: Number(event.target.value) },
+                            })
+                          }
+                          step={1}
+                          type="number"
+                          value={selectedCrop.height}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  <label>
+                    Mask
+                    <select
+                      onChange={(event) =>
+                        updateLayerVisual(selectedLayer.id, {
+                          mask: event.target.value as ProjectState["layers"][number]["mask"],
+                        })
+                      }
+                      value={selectedLayer.mask}
+                    >
+                      <option value="none">none</option>
+                      <option value="circle">circle</option>
+                      <option value="rounded_rect">rounded_rect</option>
+                      <option value="ellipse">ellipse</option>
+                    </select>
+                  </label>
+                  <label>
+                    Fit
+                    <select
+                      onChange={(event) =>
+                        updateLayerVisual(selectedLayer.id, {
+                          fit: event.target.value as ProjectState["layers"][number]["fit"],
+                        })
+                      }
+                      value={selectedLayer.fit}
+                    >
+                      <option value="none">none</option>
+                      <option value="contain">contain</option>
+                      <option value="cover">cover</option>
+                      <option value="stretch">stretch</option>
+                      <option value="blur_background">blur_background</option>
+                    </select>
                   </label>
                 </>
               ) : null}

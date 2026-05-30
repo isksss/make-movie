@@ -108,6 +108,8 @@ function drawLayers(
 ) {
   for (const item of items) {
     const transform = resolvePreviewTransform(item.layer.transform, project, item.lane);
+    const crop = item.layer.crop;
+    const cropActive = crop.width > 0 && crop.height > 0;
     const width = Math.max(24, transform.width * transform.scale * viewport.scale);
     const height = Math.max(18, transform.height * transform.scale * viewport.scale);
     const x = viewport.offsetX + transform.x * viewport.scale;
@@ -122,15 +124,61 @@ function drawLayers(
       (item.layer.contentKind === "audio" || item.layer.contentKind === "voice" ? 0.72 : 0.94) *
       transform.opacity;
     context.fillStyle = item.color;
-    roundedRect(context, x, y, width, height, 6);
-    context.fill();
+    if (item.layer.fit === "blur_background") {
+      context.globalAlpha *= 0.35;
+      roundedRect(context, x - 8, y - 8, width + 16, height + 16, 8);
+      context.fill();
+      context.globalAlpha =
+        (item.layer.contentKind === "audio" || item.layer.contentKind === "voice" ? 0.72 : 0.94) *
+        transform.opacity;
+    }
+    drawMaskedLayerShape(context, item.layer.mask, x, y, width, height);
     context.globalAlpha = 1;
+    if (cropActive) {
+      const cropX = x + Math.min(width - 8, crop.x * viewport.scale);
+      const cropY = y + Math.min(height - 8, crop.y * viewport.scale);
+      const cropWidth = Math.min(width, crop.width * viewport.scale);
+      const cropHeight = Math.min(height, crop.height * viewport.scale);
+      context.strokeStyle = "#101417";
+      context.lineWidth = 2;
+      context.setLineDash([5, 4]);
+      context.strokeRect(cropX, cropY, cropWidth, cropHeight);
+      context.setLineDash([]);
+    }
     context.fillStyle = "#101417";
     context.font = "600 14px system-ui, sans-serif";
     context.textBaseline = "middle";
     context.fillText(item.layer.label, x + 12, y + height / 2);
     context.restore();
   }
+}
+
+function drawMaskedLayerShape(
+  context: CanvasRenderingContext2D,
+  mask: TimelineLayer["mask"],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  context.beginPath();
+  switch (mask) {
+    case "circle": {
+      const radius = Math.min(width, height) / 2;
+      context.ellipse(x + width / 2, y + height / 2, radius, radius, 0, 0, Math.PI * 2);
+      break;
+    }
+    case "ellipse":
+      context.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+      break;
+    case "rounded_rect":
+      roundedRect(context, x, y, width, height, Math.min(18, width / 4, height / 4));
+      break;
+    case "none":
+      roundedRect(context, x, y, width, height, 6);
+      break;
+  }
+  context.fill();
 }
 
 function resolvePreviewTransform(

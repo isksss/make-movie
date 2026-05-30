@@ -1,4 +1,6 @@
 export type AssetKind = "video" | "image" | "audio" | "subtitle" | "font" | "mask";
+export type MaskKind = "none" | "circle" | "rounded_rect" | "ellipse";
+export type FitMode = "none" | "contain" | "cover" | "stretch" | "blur_background";
 
 export interface ProjectSettings {
   title: string;
@@ -25,6 +27,9 @@ export interface TimelineLayer {
   duration: number;
   zIndex: number;
   transform: LayerTransform;
+  crop: CropRect;
+  mask: MaskKind;
+  fit: FitMode;
 }
 
 export interface LayerTransform {
@@ -35,6 +40,13 @@ export interface LayerTransform {
   scale: number;
   rotation: number;
   opacity: number;
+}
+
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface Track {
@@ -74,6 +86,16 @@ export function layerTransform(overrides: Partial<LayerTransform> = {}): LayerTr
     scale: 1,
     rotation: 0,
     opacity: 1,
+    ...overrides,
+  };
+}
+
+export function cropRect(overrides: Partial<CropRect> = {}): CropRect {
+  return {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
     ...overrides,
   };
 }
