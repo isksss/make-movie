@@ -4,7 +4,7 @@ use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
     AnimatedProperty, Animation, AssetKind, AudioLayer, Crop, Easing, Effect, Layer, LayerContent,
     Mask, Project, SubtitleLayer, TextAlign, TextLayer, TextShadow, TextStroke, Transform,
-    VideoLayer,
+    Transition, VideoLayer, WipeShape,
 };
 use std::env;
 use std::fs;
@@ -704,6 +704,21 @@ fn draw_layer(
     transform: Transform,
     time: f64,
 ) -> Result<()> {
+    let mut layer_frame = RgbaImage::from_pixel(frame.width(), frame.height(), Rgba([0, 0, 0, 0]));
+    draw_layer_content(project, options, &mut layer_frame, layer, transform, time)?;
+    apply_transition_to_frame(&mut layer_frame, layer, time - layer.start);
+    alpha_blend(frame, &layer_frame, 0, 0, 1.0);
+    Ok(())
+}
+
+fn draw_layer_content(
+    project: &Project,
+    options: &RenderOptions,
+    frame: &mut RgbaImage,
+    layer: &Layer,
+    transform: Transform,
+    time: f64,
+) -> Result<()> {
     match &layer.content {
         LayerContent::Image(content) => {
             let asset = project
@@ -760,6 +775,121 @@ fn draw_layer(
     Ok(())
 }
 
+fn apply_transition_to_frame(frame: &mut RgbaImage, layer: &Layer, local_time: f64) {
+    let Some(transition) = &layer.transition else {
+        return;
+    };
+    let progress = transition_progress(transition, layer.duration, local_time);
+    match transition {
+        Transition::CrossFade { duration } if *duration > 0.0 => {
+            multiply_alpha(frame, progress);
+        }
+        Transition::Wipe { duration, shape } if *duration > 0.0 => {
+            apply_wipe_transition(frame, shape, progress);
+        }
+        Transition::Blur { duration } if *duration > 0.0 => {
+            let radius = (1.0 - progress) * 8.0;
+            if radius > 0.01 {
+                *frame = imageops::blur(frame, radius);
+            }
+        }
+        Transition::Flash { duration } if *duration > 0.0 => {
+            let amount = ((1.0 - progress) * 180.0) as i32;
+            if amount > 0 {
+                *frame = imageops::brighten(frame, amount);
+            }
+        }
+        Transition::Zoom { duration } if *duration > 0.0 => {
+            multiply_alpha(frame, progress.clamp(0.0, 1.0));
+        }
+        Transition::Push { .. }
+        | Transition::CrossFade { .. }
+        | Transition::Wipe { .. }
+        | Transition::Zoom { .. }
+        | Transition::Blur { .. }
+        | Transition::Flash { .. } => {}
+    }
+}
+
+fn transition_progress(transition: &Transition, layer_duration: f64, local_time: f64) -> f32 {
+    let duration = transition_duration(transition);
+    if duration <= 0.0 {
+        return 1.0;
+    }
+    let intro = (local_time / duration).clamp(0.0, 1.0);
+    let outro = ((layer_duration - local_time) / duration).clamp(0.0, 1.0);
+    intro.min(outro).clamp(0.0, 1.0) as f32
+}
+
+fn transition_duration(transition: &Transition) -> f64 {
+    match transition {
+        Transition::CrossFade { duration }
+        | Transition::Push { duration }
+        | Transition::Zoom { duration }
+        | Transition::Blur { duration }
+        | Transition::Flash { duration } => *duration,
+        Transition::Wipe { duration, .. } => *duration,
+    }
+}
+
+fn multiply_alpha(frame: &mut RgbaImage, amount: f32) {
+    let amount = amount.clamp(0.0, 1.0);
+    for pixel in frame.pixels_mut() {
+        pixel[3] = (f32::from(pixel[3]) * amount).round() as u8;
+    }
+}
+
+fn apply_wipe_transition(frame: &mut RgbaImage, shape: &WipeShape, progress: f32) {
+    let progress = progress.clamp(0.0, 1.0);
+    match shape {
+        WipeShape::Circle => apply_circle_wipe(frame, progress),
+        WipeShape::RoundedRect { radius, .. } => apply_rounded_rect_wipe(frame, *radius, progress),
+    }
+}
+
+fn apply_circle_wipe(frame: &mut RgbaImage, progress: f32) {
+    let center_x = frame.width() as f32 / 2.0;
+    let center_y = frame.height() as f32 / 2.0;
+    let max_radius = (center_x * center_x + center_y * center_y).sqrt();
+    let radius = max_radius * progress;
+    for (x, y, pixel) in frame.enumerate_pixels_mut() {
+        let dx = x as f32 + 0.5 - center_x;
+        let dy = y as f32 + 0.5 - center_y;
+        if (dx * dx + dy * dy).sqrt() > radius {
+            pixel[3] = 0;
+        }
+    }
+}
+
+fn apply_rounded_rect_wipe(frame: &mut RgbaImage, radius: f32, progress: f32) {
+    let wipe_width = frame.width() as f32 * progress;
+    let wipe_height = frame.height() as f32 * progress;
+    let origin_x = (frame.width() as f32 - wipe_width) / 2.0;
+    let origin_y = (frame.height() as f32 - wipe_height) / 2.0;
+    let radius = radius.max(0.0).min(wipe_width.min(wipe_height) / 2.0);
+    for (x, y, pixel) in frame.enumerate_pixels_mut() {
+        let px = x as f32 + 0.5;
+        let py = y as f32 + 0.5;
+        if px < origin_x
+            || py < origin_y
+            || px > origin_x + wipe_width
+            || py > origin_y + wipe_height
+        {
+            pixel[3] = 0;
+            continue;
+        }
+        let local_x = px - origin_x;
+        let local_y = py - origin_y;
+        let corner_x = local_x.clamp(radius, wipe_width - radius);
+        let corner_y = local_y.clamp(radius, wipe_height - radius);
+        let dx = local_x - corner_x;
+        let dy = local_y - corner_y;
+        if dx * dx + dy * dy > radius * radius {
+            pixel[3] = 0;
+        }
+    }
+}
+
 fn resolve_layer_transform(layer: &Layer, local_time: f64) -> Transform {
     let mut transform = layer.transform;
     for animation in &layer.animations {
@@ -779,7 +909,35 @@ fn resolve_layer_transform(layer: &Layer, local_time: f64) -> Transform {
             }
         }
     }
-    apply_transform_effects(layer, local_time, transform)
+    let transform = apply_transform_effects(layer, local_time, transform);
+    apply_transition_transform(layer, local_time, transform)
+}
+
+fn apply_transition_transform(
+    layer: &Layer,
+    local_time: f64,
+    mut transform: Transform,
+) -> Transform {
+    let Some(transition) = &layer.transition else {
+        return transform;
+    };
+    let progress = transition_progress(transition, layer.duration, local_time);
+    match transition {
+        Transition::Push { duration } if *duration > 0.0 => {
+            let offset = (1.0 - progress) * transform.width.max(1.0);
+            transform.x -= offset;
+        }
+        Transition::Zoom { duration } if *duration > 0.0 => {
+            transform.scale *= 0.85 + 0.15 * progress;
+        }
+        Transition::CrossFade { .. }
+        | Transition::Wipe { .. }
+        | Transition::Push { .. }
+        | Transition::Zoom { .. }
+        | Transition::Blur { .. }
+        | Transition::Flash { .. } => {}
+    }
+    transform
 }
 
 fn resolve_animation_value(animation: &Animation, local_time: f64) -> Option<f32> {
@@ -1514,7 +1672,7 @@ mod tests {
     use mm_core::{
         AnimatedProperty, Animation, Asset, AssetKind, AssetMode, AudioLayer, Crop, Easing, Effect,
         ImageLayer, Keyframe, Mask, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
-        VideoLayer,
+        Transition, VideoLayer, WipeShape,
     };
 
     fn text_project() -> Project {
@@ -1660,6 +1818,54 @@ mod tests {
 
         assert_eq!(transform.x, 20.0);
         assert!((transform.opacity - 0.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn transition_transform_applies_push_and_zoom() {
+        let mut project = text_project();
+        let layer = &mut project.tracks[0].layers[0];
+        layer.transform.width = 100.0;
+        layer.transition = Some(Transition::Push { duration: 1.0 });
+
+        let pushed = resolve_layer_transform(layer, 0.25);
+
+        assert!((pushed.x - 85.0).abs() < 0.001);
+
+        layer.transition = Some(Transition::Zoom { duration: 1.0 });
+        let zoomed = resolve_layer_transform(layer, 0.5);
+
+        assert!((zoomed.scale - 0.925).abs() < 0.001);
+    }
+
+    #[test]
+    fn transition_frame_applies_crossfade_wipe_blur_and_flash() {
+        let mut project = text_project();
+        let layer = &mut project.tracks[0].layers[0];
+        layer.duration = 2.0;
+        let mut frame = RgbaImage::from_pixel(16, 16, Rgba([20, 20, 20, 255]));
+        layer.transition = Some(Transition::CrossFade { duration: 1.0 });
+        apply_transition_to_frame(&mut frame, layer, 0.5);
+        assert_eq!(frame.get_pixel(0, 0)[3], 128);
+
+        let mut wipe_frame = RgbaImage::from_pixel(16, 16, Rgba([20, 20, 20, 255]));
+        layer.transition = Some(Transition::Wipe {
+            duration: 1.0,
+            shape: WipeShape::Circle,
+        });
+        apply_transition_to_frame(&mut wipe_frame, layer, 0.2);
+        assert_eq!(wipe_frame.get_pixel(0, 0)[3], 0);
+        assert_eq!(wipe_frame.get_pixel(8, 8)[3], 255);
+
+        let mut blur_frame = RgbaImage::from_pixel(4, 1, Rgba([0, 0, 0, 255]));
+        blur_frame.put_pixel(0, 0, Rgba([255, 255, 255, 255]));
+        layer.transition = Some(Transition::Blur { duration: 1.0 });
+        apply_transition_to_frame(&mut blur_frame, layer, 0.1);
+        assert!(blur_frame.get_pixel(1, 0)[0] > 0);
+
+        let mut flash_frame = RgbaImage::from_pixel(1, 1, Rgba([20, 20, 20, 255]));
+        layer.transition = Some(Transition::Flash { duration: 1.0 });
+        apply_transition_to_frame(&mut flash_frame, layer, 0.1);
+        assert!(flash_frame.get_pixel(0, 0)[0] > 20);
     }
 
     #[test]
