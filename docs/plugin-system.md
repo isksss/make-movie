@@ -10,6 +10,21 @@ Plugin は追加機能専用です。Core 機能は置き換えません。
 
 詳細は `plugin-api/docs/abi.md` を参照します。
 
+## SDK
+
+`plugin-api/sdk/` に `plugin.wit` を正本として利用する最小 SDK 雛形を配置します。
+
+- `plugin-api/sdk/rust`: `mm-sdk-rust`
+- `plugin-api/sdk/go`: `mm-sdk-go`
+- `plugin-api/sdk/ts`: `mm-sdk-ts`
+- `plugin-api/sdk/csharp`: `mm-sdk-csharp`
+
+SDK 構成は次のコマンドで検証します。
+
+```bash
+bash plugin-api/sdk/verify.sh
+```
+
 ## Manifest / Lock
 
 Plugin manifest と lock の schema は `plugin-api/schema/` に配置します。
