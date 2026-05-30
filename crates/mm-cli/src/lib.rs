@@ -771,6 +771,7 @@ fn empty_project() -> mm_core::Project {
         assets: vec![],
         tracks: vec![],
         scenes: vec![],
+        groups: vec![],
         plugins: vec![],
     }
 }

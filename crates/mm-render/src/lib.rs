@@ -2227,6 +2227,7 @@ mod tests {
                 kind: TrackKind::Video,
                 layers: vec![Layer {
                     id: "text1".to_string(),
+                    group_id: None,
                     start: 0.0,
                     duration: 1.0,
                     z_index: 1,
@@ -2257,6 +2258,7 @@ mod tests {
                 }],
             }],
             scenes: vec![],
+            groups: vec![],
             plugins: vec![],
         }
     }
@@ -2679,6 +2681,7 @@ mod tests {
         let project = text_project();
         let layer = Layer {
             id: "video".to_string(),
+            group_id: None,
             start: 0.5,
             duration: 1.0,
             z_index: 0,
@@ -2877,6 +2880,7 @@ mod tests {
                 kind: TrackKind::Audio,
                 layers: vec![Layer {
                     id: "voice".to_string(),
+                    group_id: None,
                     start: 0.1,
                     duration: 0.4,
                     z_index: 0,
@@ -2895,6 +2899,7 @@ mod tests {
                 }],
             }],
             scenes: vec![],
+            groups: vec![],
             plugins: vec![],
         };
         let options = RenderOptions::new(dir.path(), "output.mp4");
@@ -2985,6 +2990,7 @@ mod tests {
                     layers: vec![
                         Layer {
                             id: "video".to_string(),
+                            group_id: None,
                             start: 0.0,
                             duration: 0.5,
                             z_index: 0,
@@ -3010,6 +3016,7 @@ mod tests {
                         },
                         Layer {
                             id: "label".to_string(),
+                            group_id: None,
                             start: 0.0,
                             duration: 0.5,
                             z_index: 10,
@@ -3046,6 +3053,7 @@ mod tests {
                     kind: TrackKind::Audio,
                     layers: vec![Layer {
                         id: "audio".to_string(),
+                        group_id: None,
                         start: 0.0,
                         duration: 0.5,
                         z_index: 0,
@@ -3062,6 +3070,7 @@ mod tests {
                 },
             ],
             scenes: vec![],
+            groups: vec![],
             plugins: vec![],
         };
         let options = RenderOptions::new(dir.path(), &output_path);
