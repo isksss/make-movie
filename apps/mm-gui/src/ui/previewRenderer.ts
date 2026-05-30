@@ -145,6 +145,16 @@ function drawLayers(
       context.strokeRect(cropX, cropY, cropWidth, cropHeight);
       context.setLineDash([]);
     }
+    if (item.layer.transition.kind !== "none") {
+      context.strokeStyle = "#ffffff";
+      context.lineWidth = 2;
+      context.setLineDash([8, 5]);
+      context.strokeRect(x - 3, y - 3, width + 6, height + 6);
+      context.setLineDash([]);
+      context.fillStyle = "#ffffff";
+      context.font = "700 11px system-ui, sans-serif";
+      context.fillText(item.layer.transition.kind, x + 12, Math.max(y + 14, y + height - 12));
+    }
     context.fillStyle = "#101417";
     context.font = "600 14px system-ui, sans-serif";
     context.textBaseline = "middle";
