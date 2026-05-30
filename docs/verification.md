@@ -1,5 +1,16 @@
 # 検証
 
+## 一括検証
+
+Repository root から主要検証をまとめて実行します。
+
+```bash
+bash scripts/verify-all.sh
+```
+
+この script は Rust workspace、GUI、Tauri、Plugin SDK、`git diff --check` を順に確認します。
+`dotnet` が利用できる環境では C# SDK build も実行します。`dotnet` が無い環境では C# SDK build のみ明示的に skip します。
+
 ## Rust
 
 ```bash
@@ -34,5 +45,16 @@ corepack pnpm --dir apps/mm-gui build
 
 ```bash
 cargo test --manifest-path apps/mm-gui/src-tauri/Cargo.toml
-cargo check --manifest-path apps/mm-gui/src-tauri/Cargo.toml
+cargo clippy --manifest-path apps/mm-gui/src-tauri/Cargo.toml --all-targets -- -D warnings
+```
+
+## Plugin SDK
+
+```bash
+bash plugin-api/sdk/generate.sh
+bash plugin-api/sdk/verify.sh
+cargo test --manifest-path plugin-api/sdk/rust/Cargo.toml
+(cd plugin-api/sdk/go && go test ./...)
+corepack pnpm --dir plugin-api/sdk/ts test
+dotnet build plugin-api/sdk/csharp/mm-sdk-csharp.csproj
 ```
