@@ -24,5 +24,15 @@ cargo run -p mm-cli -- build --project examples/basic/mm.toml --output examples/
 ## GUI
 
 ```bash
-pnpm --dir apps/mm-gui build
+corepack pnpm --dir apps/mm-gui lint
+corepack pnpm --dir apps/mm-gui test
+corepack pnpm --dir apps/mm-gui e2e
+corepack pnpm --dir apps/mm-gui build
+```
+
+## Tauri
+
+```bash
+cargo test --manifest-path apps/mm-gui/src-tauri/Cargo.toml
+cargo check --manifest-path apps/mm-gui/src-tauri/Cargo.toml
 ```
