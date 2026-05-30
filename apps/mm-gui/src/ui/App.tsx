@@ -47,7 +47,7 @@ export function App() {
     updateLayerTransition,
     updateLayerEffect,
     updateLayerAnimation,
-    updateTtsText,
+    updateTts,
     undo,
     redo,
     canUndo,
@@ -683,11 +683,43 @@ export function App() {
           <div className="tts-editor">
             <label>
               {t.speaker}
-              <input readOnly value={tts.speaker} />
+              <input
+                onChange={(event) => updateTts({ speaker: event.target.value })}
+                value={tts.speaker}
+              />
             </label>
             <label>
               {t.text}
-              <textarea onChange={(event) => updateTtsText(event.target.value)} value={tts.text} />
+              <textarea
+                onChange={(event) => updateTts({ text: event.target.value })}
+                value={tts.text}
+              />
+            </label>
+            <label>
+              {t.speed}
+              <input
+                min={0.5}
+                onChange={(event) => updateTts({ speed: Number(event.target.value) })}
+                step={0.1}
+                type="number"
+                value={tts.speed}
+              />
+            </label>
+            <label>
+              {t.pitch}
+              <input
+                onChange={(event) => updateTts({ pitch: Number(event.target.value) })}
+                step={0.1}
+                type="number"
+                value={tts.pitch}
+              />
+            </label>
+            <label>
+              {t.emotion}
+              <input
+                onChange={(event) => updateTts({ emotion: event.target.value })}
+                value={tts.emotion}
+              />
             </label>
           </div>
         </section>
