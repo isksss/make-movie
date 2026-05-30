@@ -2,6 +2,18 @@ export type AssetKind = "video" | "image" | "audio" | "subtitle" | "font" | "mas
 export type MaskKind = "none" | "circle" | "rounded_rect" | "ellipse";
 export type FitMode = "none" | "contain" | "cover" | "stretch" | "blur_background";
 export type TransitionKind = "none" | "crossfade" | "wipe" | "push" | "zoom" | "blur" | "flash";
+export type EffectKind =
+  | "none"
+  | "fade_in"
+  | "fade_out"
+  | "blur"
+  | "zoom"
+  | "slide"
+  | "brightness"
+  | "contrast"
+  | "saturation"
+  | "pixelate"
+  | "motion_blur";
 
 export interface ProjectSettings {
   title: string;
@@ -32,6 +44,7 @@ export interface TimelineLayer {
   mask: MaskKind;
   fit: FitMode;
   transition: LayerTransition;
+  effects: LayerEffect[];
 }
 
 export interface LayerTransform {
@@ -54,6 +67,14 @@ export interface CropRect {
 export interface LayerTransition {
   kind: TransitionKind;
   duration: number;
+}
+
+export interface LayerEffect {
+  kind: EffectKind;
+  duration: number;
+  amount: number;
+  x: number;
+  y: number;
 }
 
 export interface Track {
@@ -111,6 +132,17 @@ export function layerTransition(overrides: Partial<LayerTransition> = {}): Layer
   return {
     kind: "none",
     duration: 0.5,
+    ...overrides,
+  };
+}
+
+export function layerEffect(overrides: Partial<LayerEffect> = {}): LayerEffect {
+  return {
+    kind: "none",
+    duration: 0.5,
+    amount: 1,
+    x: 0,
+    y: 0,
     ...overrides,
   };
 }

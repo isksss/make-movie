@@ -155,6 +155,17 @@ function drawLayers(
       context.font = "700 11px system-ui, sans-serif";
       context.fillText(item.layer.transition.kind, x + 12, Math.max(y + 14, y + height - 12));
     }
+    if (item.layer.effects.length > 0) {
+      const effect = item.layer.effects[0];
+      context.strokeStyle = "#f3d36b";
+      context.lineWidth = 2;
+      context.setLineDash([3, 4]);
+      context.strokeRect(x + 4, y + 4, Math.max(8, width - 8), Math.max(8, height - 8));
+      context.setLineDash([]);
+      context.fillStyle = "#f3d36b";
+      context.font = "700 11px system-ui, sans-serif";
+      context.fillText(effect.kind, x + 12, y + 16);
+    }
     context.fillStyle = "#101417";
     context.font = "600 14px system-ui, sans-serif";
     context.textBaseline = "middle";

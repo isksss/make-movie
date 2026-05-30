@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { cropRect, layerTransform, layerTransition } from "../types";
+import { cropRect, layerEffect, layerTransform, layerTransition } from "../types";
 import type {
   Asset,
   CropRect,
   FitMode,
+  LayerEffect,
   LayerTransition,
   LayerTransform,
   MaskKind,
@@ -39,6 +40,7 @@ interface ProjectStore {
     visual: Partial<{ crop: Partial<CropRect>; mask: MaskKind; fit: FitMode }>,
   ) => void;
   updateLayerTransition: (id: string, transition: Partial<LayerTransition>) => void;
+  updateLayerEffect: (id: string, effect: Partial<LayerEffect>) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
   undo: () => void;
@@ -82,6 +84,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "none",
       transition: layerTransition(),
+      effects: [],
     },
     {
       id: "intro-image",
@@ -96,6 +99,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "contain",
       transition: layerTransition(),
+      effects: [],
     },
     {
       id: "subtitle-main",
@@ -110,6 +114,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "none",
       transition: layerTransition(),
+      effects: [],
     },
     {
       id: "voice-main",
@@ -124,6 +129,7 @@ export const initialProject: ProjectState = {
       mask: "none",
       fit: "none",
       transition: layerTransition(),
+      effects: [],
     },
   ],
 };
@@ -316,6 +322,27 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                 ...layerTransition(layer.transition),
                 ...transition,
               },
+            };
+          }),
+        },
+      })),
+    ),
+  updateLayerEffect: (id, effect) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            const nextEffect = {
+              ...layerEffect(layer.effects[0]),
+              ...effect,
+            };
+            return {
+              ...layer,
+              effects: nextEffect.kind === "none" ? [] : [nextEffect],
             };
           }),
         },

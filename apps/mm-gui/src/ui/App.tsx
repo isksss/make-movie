@@ -19,7 +19,7 @@ import { useState } from "react";
 import { commands } from "../services/tauri";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
-import { cropRect, layerTransform, layerTransition } from "../types";
+import { cropRect, layerEffect, layerTransform, layerTransition } from "../types";
 import type { ProjectState } from "../types";
 import { PreviewCanvas } from "./PreviewCanvas";
 
@@ -42,6 +42,7 @@ export function App() {
     updateLayerTransform,
     updateLayerVisual,
     updateLayerTransition,
+    updateLayerEffect,
     updateTtsText,
     undo,
     redo,
@@ -55,6 +56,7 @@ export function App() {
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
   const selectedCrop = selectedLayer ? cropRect(selectedLayer.crop) : null;
   const selectedTransition = selectedLayer ? layerTransition(selectedLayer.transition) : null;
+  const selectedEffect = selectedLayer ? layerEffect(selectedLayer.effects[0]) : null;
   const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
     try {
       await action();
@@ -431,6 +433,87 @@ export function App() {
                           step={0.1}
                           type="number"
                           value={selectedTransition.duration}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  {selectedEffect ? (
+                    <>
+                      <label>
+                        Effect
+                        <select
+                          onChange={(event) =>
+                            updateLayerEffect(selectedLayer.id, {
+                              kind: event.target
+                                .value as ProjectState["layers"][number]["effects"][number]["kind"],
+                            })
+                          }
+                          value={selectedEffect.kind}
+                        >
+                          <option value="none">none</option>
+                          <option value="fade_in">fade_in</option>
+                          <option value="fade_out">fade_out</option>
+                          <option value="blur">blur</option>
+                          <option value="zoom">zoom</option>
+                          <option value="slide">slide</option>
+                          <option value="brightness">brightness</option>
+                          <option value="contrast">contrast</option>
+                          <option value="saturation">saturation</option>
+                          <option value="pixelate">pixelate</option>
+                          <option value="motion_blur">motion_blur</option>
+                        </select>
+                      </label>
+                      <label>
+                        Effect Duration
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerEffect(selectedLayer.id, {
+                              duration: Number(event.target.value),
+                            })
+                          }
+                          step={0.1}
+                          type="number"
+                          value={selectedEffect.duration}
+                        />
+                      </label>
+                      <label>
+                        Effect Amount
+                        <input
+                          onChange={(event) =>
+                            updateLayerEffect(selectedLayer.id, {
+                              amount: Number(event.target.value),
+                            })
+                          }
+                          step={0.1}
+                          type="number"
+                          value={selectedEffect.amount}
+                        />
+                      </label>
+                      <label>
+                        Effect X
+                        <input
+                          onChange={(event) =>
+                            updateLayerEffect(selectedLayer.id, {
+                              x: Number(event.target.value),
+                            })
+                          }
+                          step={1}
+                          type="number"
+                          value={selectedEffect.x}
+                        />
+                      </label>
+                      <label>
+                        Effect Y
+                        <input
+                          onChange={(event) =>
+                            updateLayerEffect(selectedLayer.id, {
+                              y: Number(event.target.value),
+                            })
+                          }
+                          step={1}
+                          type="number"
+                          value={selectedEffect.y}
                         />
                       </label>
                     </>

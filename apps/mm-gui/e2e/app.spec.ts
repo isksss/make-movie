@@ -202,3 +202,38 @@ test("PropertyからTransitionを編集しUndo/Redoできる", async ({ page }) 
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(transition).toHaveValue("wipe");
 });
+
+test("PropertyからEffectを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  const effect = page.getByRole("combobox", { name: "Effect", exact: true });
+  const effectAmount = page.getByRole("spinbutton", { name: "Effect Amount", exact: true });
+  const effectDuration = page.getByRole("spinbutton", {
+    name: "Effect Duration",
+    exact: true,
+  });
+  await expect(effect).toHaveValue("none");
+
+  await effect.selectOption("blur");
+  await effectAmount.fill("2.5");
+  await effectDuration.fill("1.2");
+  await expect(effect).toHaveValue("blur");
+  await expect(effectAmount).toHaveValue("2.5");
+  await expect(effectDuration).toHaveValue("1.2");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(effectDuration).toHaveValue("0.5");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(effectAmount).toHaveValue("1");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(effect).toHaveValue("none");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(effect).toHaveValue("blur");
+});
