@@ -120,6 +120,59 @@ fn plugin_help_outputs_japanese_and_english() {
 }
 
 #[test]
+fn plugin_install_uses_project_and_global_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_home = dir.path().join("data");
+    let component = dir.path().join("component.wasm");
+    fs::write(&component, b"\0asm").unwrap();
+    fs::write(
+        dir.path().join("global.toml"),
+        r#"
+[[plugin]]
+repository = "local"
+name = "global-theme"
+path = "/missing/global.wasm"
+version = "1.0.0"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("mm.toml"),
+        format!(
+            r#"
+[[plugin]]
+repository = "local"
+name = "global-theme"
+path = "{}"
+version = "2.0.0"
+"#,
+            component.display()
+        ),
+    )
+    .unwrap();
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    command
+        .current_dir(dir.path())
+        .env("XDG_DATA_HOME", &data_home)
+        .arg("plugin")
+        .arg("install")
+        .arg("--project")
+        .arg("mm.toml")
+        .arg("--global-config")
+        .arg("global.toml")
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(dir.path().join("mm.lock")).unwrap();
+    assert!(lock.contains("global-theme"));
+    assert!(lock.contains("2.0.0"));
+    assert!(data_home
+        .join("mm/plugins/global-theme/global-theme.wasm")
+        .exists());
+}
+
+#[test]
 fn preview_command_writes_png_frame() {
     let dir = tempfile::tempdir().unwrap();
     write_valid_project(dir.path());
