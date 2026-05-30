@@ -25,6 +25,26 @@
 - 本体ライセンスは MIT とする。
 - FFmpeg は LGPL 条件を満たす形で同梱する。
 
+## GUI sidecar 準備
+
+GUI bundle 前に、`apps/mm-gui/src-tauri/binaries/` へ target triple 付きの
+`ffmpeg` / `ffprobe` を配置します。
+
+```text
+apps/mm-gui/src-tauri/binaries/ffmpeg-<target-triple>
+apps/mm-gui/src-tauri/binaries/ffprobe-<target-triple>
+```
+
+Windows target では `.exe` を付けます。
+
+```text
+apps/mm-gui/src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
+apps/mm-gui/src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe
+```
+
+`tauri.conf.json` の `bundle.externalBin` で `binaries/ffmpeg` と
+`binaries/ffprobe` を指定しているため、Tauri bundle 時に同梱されます。
+
 ## リリース記録
 
 リリース PR には以下を記載します。

@@ -17,5 +17,8 @@
         "height": 860
       }
     ]
+  },
+  "bundle": {
+    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"]
   }
 }

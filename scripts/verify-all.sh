@@ -24,6 +24,7 @@ run corepack pnpm --dir "$root/apps/mm-gui" build
 run corepack pnpm --dir "$root/apps/mm-gui" lint
 run corepack pnpm --dir "$root/apps/mm-gui" e2e
 
+run bash "$root/scripts/prepare-tauri-sidecars.sh"
 run cargo test --manifest-path "$root/apps/mm-gui/src-tauri/Cargo.toml"
 run cargo clippy --manifest-path "$root/apps/mm-gui/src-tauri/Cargo.toml" --all-targets -- -D warnings
 
