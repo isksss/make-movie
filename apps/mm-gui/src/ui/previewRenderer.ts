@@ -166,6 +166,18 @@ function drawLayers(
       context.font = "700 11px system-ui, sans-serif";
       context.fillText(effect.kind, x + 12, y + 16);
     }
+    if (item.layer.animations.length > 0) {
+      const animation = item.layer.animations[0];
+      context.strokeStyle = "#58a9b8";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(x, y + height + 8);
+      context.lineTo(x + width, y + height + 8);
+      context.stroke();
+      context.fillStyle = "#58a9b8";
+      context.font = "700 11px system-ui, sans-serif";
+      context.fillText(`${animation.property}:${animation.easing}`, x + 12, y + height + 24);
+    }
     context.fillStyle = "#101417";
     context.font = "600 14px system-ui, sans-serif";
     context.textBaseline = "middle";

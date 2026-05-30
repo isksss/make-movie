@@ -139,12 +139,14 @@ test("PropertyからTransformを編集しUndo/Redoできる", async ({ page }) =
   await expect(width).toHaveValue("420");
 
   const height = page.getByRole("spinbutton", { name: "Height", exact: true });
+  const rotation = page.getByRole("spinbutton", { name: "Rotation", exact: true });
+  const opacity = page.getByRole("spinbutton", { name: "Opacity", exact: true });
   await height.fill("240");
-  await page.getByLabel("Rotation").fill("15");
-  await page.getByLabel("Opacity").fill("0.5");
+  await rotation.fill("15");
+  await opacity.fill("0.5");
   await expect(height).toHaveValue("240");
-  await expect(page.getByLabel("Rotation")).toHaveValue("15");
-  await expect(page.getByLabel("Opacity")).toHaveValue("0.5");
+  await expect(rotation).toHaveValue("15");
+  await expect(opacity).toHaveValue("0.5");
 });
 
 test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page }) => {
@@ -236,4 +238,48 @@ test("PropertyからEffectを編集しUndo/Redoできる", async ({ page }) => {
 
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(effect).toHaveValue("blur");
+});
+
+test("PropertyからKeyframeを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  const property = page.getByRole("combobox", { name: "Keyframe Property", exact: true });
+  const easing = page.getByRole("combobox", { name: "Easing", exact: true });
+  const keyframe2Time = page.getByRole("spinbutton", {
+    name: "Keyframe 2 Time",
+    exact: true,
+  });
+  const keyframe2Value = page.getByRole("spinbutton", {
+    name: "Keyframe 2 Value",
+    exact: true,
+  });
+  await expect(property).toHaveValue("none");
+
+  await property.selectOption("opacity");
+  await easing.selectOption("ease_in_out");
+  await keyframe2Time.fill("1.5");
+  await keyframe2Value.fill("0.25");
+  await expect(property).toHaveValue("opacity");
+  await expect(easing).toHaveValue("ease_in_out");
+  await expect(keyframe2Time).toHaveValue("1.5");
+  await expect(keyframe2Value).toHaveValue("0.25");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(keyframe2Value).toHaveValue("1");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(keyframe2Time).toHaveValue("1");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(easing).toHaveValue("linear");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(property).toHaveValue("none");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(property).toHaveValue("opacity");
 });
