@@ -1,8 +1,9 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use wasmtime::{Engine, Instance, Linker, Module, Store};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginReference {
@@ -88,14 +89,17 @@ pub struct ResolvedPlugin {
     pub checksum: String,
 }
 
-#[derive(Debug, Clone)]
 pub struct PluginRuntime {
+    engine: Engine,
     plugins: Vec<LoadedPlugin>,
 }
 
 impl PluginRuntime {
     pub fn new() -> Self {
-        Self { plugins: vec![] }
+        Self {
+            engine: Engine::default(),
+            plugins: vec![],
+        }
     }
 
     pub fn load(
@@ -110,16 +114,36 @@ impl PluginRuntime {
                 component_path.display()
             );
         }
+        let module = Module::from_file(&self.engine, &component_path).map_err(|error| {
+            anyhow!(
+                "plugin wasm をロードできません: {} ({error})",
+                component_path.display()
+            )
+        })?;
+        let linker = Linker::new(&self.engine);
+        let mut store = Store::new(&self.engine, ());
+        let instance = linker.instantiate(&mut store, &module).map_err(|error| {
+            anyhow!(
+                "plugin wasm を instantiate できません: {} ({error})",
+                component_path.display()
+            )
+        })?;
         self.plugins.push(LoadedPlugin {
             manifest,
             component_path,
             initialized: false,
+            wasm: Some(WasmPluginInstance { store, instance }),
         });
         Ok(())
     }
 
     pub fn initialize_all(&mut self) -> Result<()> {
         for plugin in &mut self.plugins {
+            if let Some(wasm) = &mut plugin.wasm {
+                wasm.call_optional_export("initialize").with_context(|| {
+                    format!("plugin initialize に失敗しました: {}", plugin.manifest.name)
+                })?;
+            }
             plugin.initialized = true;
         }
         Ok(())
@@ -127,6 +151,11 @@ impl PluginRuntime {
 
     pub fn shutdown_all(&mut self) -> Result<()> {
         for plugin in &mut self.plugins {
+            if let Some(wasm) = &mut plugin.wasm {
+                wasm.call_optional_export("shutdown").with_context(|| {
+                    format!("plugin shutdown に失敗しました: {}", plugin.manifest.name)
+                })?;
+            }
             plugin.initialized = false;
         }
         Ok(())
@@ -143,11 +172,42 @@ impl Default for PluginRuntime {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct LoadedPlugin {
     pub manifest: PluginManifest,
     pub component_path: PathBuf,
     pub initialized: bool,
+    wasm: Option<WasmPluginInstance>,
+}
+
+impl std::fmt::Debug for LoadedPlugin {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LoadedPlugin")
+            .field("manifest", &self.manifest)
+            .field("component_path", &self.component_path)
+            .field("initialized", &self.initialized)
+            .finish_non_exhaustive()
+    }
+}
+
+struct WasmPluginInstance {
+    store: Store<()>,
+    instance: Instance,
+}
+
+impl WasmPluginInstance {
+    fn call_optional_export(&mut self, name: &str) -> Result<()> {
+        let Some(function) = self.instance.get_func(&mut self.store, name) else {
+            return Ok(());
+        };
+        let typed = function
+            .typed::<(), ()>(&self.store)
+            .map_err(|error| anyhow!("plugin export '{name}' の型が一致しません ({error})"))?;
+        typed
+            .call(&mut self.store, ())
+            .map_err(|error| anyhow!("plugin export '{name}' の実行に失敗しました ({error})"))?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -369,7 +429,17 @@ mod tests {
     fn runtime_tracks_lifecycle() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let component = dir.path().join("plugin.wasm");
-        fs::write(&component, [])?;
+        fs::write(
+            &component,
+            wat::parse_str(
+                r#"
+                (module
+                    (func (export "initialize"))
+                    (func (export "shutdown"))
+                )
+                "#,
+            )?,
+        )?;
         let mut runtime = PluginRuntime::new();
 
         runtime.load(manifest(), &component)?;
@@ -377,6 +447,45 @@ mod tests {
         assert!(runtime.loaded_plugins()[0].initialized);
 
         runtime.shutdown_all()?;
+        assert!(!runtime.loaded_plugins()[0].initialized);
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_rejects_invalid_wasm() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let component = dir.path().join("plugin.wasm");
+        fs::write(&component, b"not wasm")?;
+        let mut runtime = PluginRuntime::new();
+
+        let result = runtime.load(manifest(), &component);
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_returns_initialize_trap() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let component = dir.path().join("plugin.wasm");
+        fs::write(
+            &component,
+            wat::parse_str(
+                r#"
+                (module
+                    (func (export "initialize")
+                        unreachable)
+                    (func (export "shutdown"))
+                )
+                "#,
+            )?,
+        )?;
+        let mut runtime = PluginRuntime::new();
+        runtime.load(manifest(), &component)?;
+
+        let result = runtime.initialize_all();
+
+        assert!(result.is_err());
         assert!(!runtime.loaded_plugins()[0].initialized);
         Ok(())
     }
