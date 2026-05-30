@@ -98,6 +98,7 @@ export function App() {
     updateLayerTransition,
     updateLayerEffect,
     updateLayerAnimation,
+    updateLayerGroup,
     undo,
     redo,
     canUndo,
@@ -294,6 +295,22 @@ export function App() {
               <label>
                 {t.layer}
                 <input readOnly value={selectedLayer.label} />
+              </label>
+              <label>
+                {t.group}
+                <select
+                  onChange={(event) =>
+                    updateLayerGroup(selectedLayer.id, event.target.value || null)
+                  }
+                  value={selectedLayer.groupId ?? ""}
+                >
+                  <option value="">{t.noGroup}</option>
+                  {project.groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 {t.start}

@@ -55,6 +55,23 @@ describe("projectStore", () => {
     ).toBe(2.5);
   });
 
+  it("layer groupを更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerGroup("subtitle-main", "opening");
+
+    let layer = useProjectStore
+      .getState()
+      .project.layers.find((item) => item.id === "subtitle-main");
+    expect(layer?.groupId).toBe("opening");
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "subtitle-main");
+    expect(layer?.groupId).toBeNull();
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "subtitle-main");
+    expect(layer?.groupId).toBe("opening");
+  });
+
   it("TTS設定を更新しUndo/Redoできる", () => {
     useProjectStore.getState().updateTts({
       speaker: "四国めたん",

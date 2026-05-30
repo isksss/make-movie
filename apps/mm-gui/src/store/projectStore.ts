@@ -65,6 +65,7 @@ interface ProjectStore {
   updateLayerTransition: (id: string, transition: Partial<LayerTransition>) => void;
   updateLayerEffect: (id: string, effect: Partial<LayerEffect>) => void;
   updateLayerAnimation: (id: string, animation: Partial<LayerAnimation>) => void;
+  updateLayerGroup: (id: string, groupId: string | null) => void;
   addAsset: (asset: Asset) => void;
   updateTts: (tts: Partial<TtsState>) => void;
   undo: () => void;
@@ -514,6 +515,23 @@ export const useProjectStore = create<ProjectStore>((set) => ({
             return {
               ...layer,
               animations: nextAnimation.property === "none" ? [] : [nextAnimation],
+            };
+          }),
+        },
+      })),
+    ),
+  updateLayerGroup: (id, groupId) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            return {
+              ...layer,
+              groupId,
             };
           }),
         },

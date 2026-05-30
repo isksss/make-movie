@@ -122,6 +122,27 @@ test("プロパティ編集をUndo/Redoできる", async ({ page }) => {
   await expect(page.getByLabel("Start")).toHaveValue("1.2");
 });
 
+test("PropertyからGroupを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+  await useEnglish(page);
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Subtitle" })
+    .click();
+  const group = page.getByRole("combobox", { name: "Group" });
+  await expect(group).toHaveValue("");
+
+  await group.selectOption("opening");
+  await expect(group).toHaveValue("opening");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(group).toHaveValue("");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(group).toHaveValue("opening");
+});
+
 test("Textレイヤーのスタイルを編集しUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
   await useEnglish(page);
