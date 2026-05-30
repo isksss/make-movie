@@ -313,3 +313,32 @@ test("PropertyからKeyframeを編集しUndo/Redoできる", async ({ page }) =>
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(property).toHaveValue("opacity");
 });
+
+test("TTS編集でSpeaker/Text/Speed/Pitch/Emotionを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+  await useEnglish(page);
+
+  const speaker = page.getByLabel("Speaker");
+  const text = page.getByLabel("Text");
+  const speed = page.getByRole("spinbutton", { name: "Speed", exact: true });
+  const pitch = page.getByRole("spinbutton", { name: "Pitch", exact: true });
+  const emotion = page.getByRole("textbox", { name: "Emotion", exact: true });
+
+  await speaker.fill("四国めたん");
+  await text.fill("更新後の文章");
+  await speed.fill("1.4");
+  await pitch.fill("0.2");
+  await emotion.fill("happy");
+
+  await expect(speaker).toHaveValue("四国めたん");
+  await expect(text).toHaveValue("更新後の文章");
+  await expect(speed).toHaveValue("1.4");
+  await expect(pitch).toHaveValue("0.2");
+  await expect(emotion).toHaveValue("happy");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(emotion).toHaveValue("neutral");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(emotion).toHaveValue("happy");
+});

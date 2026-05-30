@@ -55,14 +55,38 @@ describe("projectStore", () => {
     ).toBe(2.5);
   });
 
-  it("TTS text 更新をUndo/Redoできる", () => {
-    useProjectStore.getState().updateTtsText("更新後の文章");
+  it("TTS設定を更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateTts({
+      speaker: "四国めたん",
+      text: "更新後の文章",
+      speed: 1.4,
+      pitch: 0.2,
+      emotion: "happy",
+    });
 
-    expect(useProjectStore.getState().tts.text).toBe("更新後の文章");
+    expect(useProjectStore.getState().tts).toMatchObject({
+      speaker: "四国めたん",
+      text: "更新後の文章",
+      speed: 1.4,
+      pitch: 0.2,
+      emotion: "happy",
+    });
     useProjectStore.getState().undo();
-    expect(useProjectStore.getState().tts.text).toBe("今日のニュースを解説します。");
+    expect(useProjectStore.getState().tts).toMatchObject({
+      speaker: "ずんだもん",
+      text: "今日のニュースを解説します。",
+      speed: 1,
+      pitch: 0,
+      emotion: "neutral",
+    });
     useProjectStore.getState().redo();
-    expect(useProjectStore.getState().tts.text).toBe("更新後の文章");
+    expect(useProjectStore.getState().tts).toMatchObject({
+      speaker: "四国めたん",
+      text: "更新後の文章",
+      speed: 1.4,
+      pitch: 0.2,
+      emotion: "happy",
+    });
   });
 
   it("layer を指定時刻でCutしUndo/Redoできる", () => {
