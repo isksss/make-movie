@@ -9,3 +9,5 @@ repository = "https://github.com/isksss/make-movie"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+
+[workspace]

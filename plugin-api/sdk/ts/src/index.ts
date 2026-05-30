@@ -1,3 +1,5 @@
+// Generated from plugin-api/plugin.wit.
+
 export interface MmPlugin {
   metadata(): string;
   initialize(): void | Promise<void>;

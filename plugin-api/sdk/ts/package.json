@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc --declaration --emitDeclarationOnly"
+    "build": "tsc --declaration --emitDeclarationOnly",
+    "test": "tsc --noEmit"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

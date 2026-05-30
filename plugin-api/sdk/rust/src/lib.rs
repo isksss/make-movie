@@ -1,7 +1,6 @@
 //! make-movie Plugin SDK for Rust.
 //!
-//! `plugin-api/plugin.wit` is the source of truth. This crate only provides a
-//! small trait and export macro for the minimal plugin lifecycle.
+//! Generated from `plugin-api/plugin.wit`.
 
 pub trait MmPlugin {
     fn metadata(&self) -> String;
