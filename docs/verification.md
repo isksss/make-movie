@@ -1,0 +1,28 @@
+# 検証
+
+## Rust
+
+```bash
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+## CLI
+
+```bash
+cargo run -p mm-cli -- validate --project examples/basic/mm.toml
+cargo run -p mm-cli -- doctor
+```
+
+FFmpeg が利用可能な環境では build も確認します。
+
+```bash
+cargo run -p mm-cli -- build --project examples/basic/mm.toml --output examples/basic/output.mp4
+```
+
+## GUI
+
+```bash
+pnpm --dir apps/mm-gui build
+```

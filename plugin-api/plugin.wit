@@ -1,0 +1,7 @@
+package mm:plugin;
+
+interface plugin {
+  metadata: func() -> string;
+  initialize: func();
+  shutdown: func();
+}
