@@ -19,6 +19,79 @@ declare global {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const calls: TauriCall[] = [];
+    const importedProjectToml = (assetId: string, assetKind: string, assetPath: string) =>
+      [
+        "[settings]",
+        'title = "E2E"',
+        "width = 1080",
+        "height = 1920",
+        "fps = 30",
+        "sample_rate = 48000",
+        "duration = 1",
+        'output = "output/movie.mp4"',
+        'asset_mode = "copy"',
+        "",
+        "[[assets]]",
+        'id = "hero"',
+        'kind = "image"',
+        'path = "media/image/hero.png"',
+        "",
+        "[[assets]]",
+        `id = "${assetId}"`,
+        `kind = "${assetKind}"`,
+        `path = "${assetPath}"`,
+        "",
+        "[[tracks]]",
+        'id = "v1"',
+        'name = "V1 Main Video"',
+        'kind = "video"',
+        "",
+        "[[tracks]]",
+        'id = "a1"',
+        'name = "A1 Voice"',
+        'kind = "audio"',
+        "",
+        "[[tracks.layers]]",
+        'id = "hero-layer"',
+        'label = "Hero Layer"',
+        "start = 0",
+        "duration = 1",
+        "z_index = 1",
+        "",
+        "[tracks.layers.content]",
+        'type = "image"',
+        'asset_id = "hero"',
+        "",
+        "[tracks.layers.transform]",
+        "x = 0",
+        "y = 0",
+        "width = 320",
+        "height = 180",
+        "scale = 1",
+        "rotation = 0",
+        "opacity = 1",
+        "",
+        "[[tracks.layers]]",
+        `id = "${assetId}-layer"`,
+        `label = "${assetId === "import" ? "Import Layer" : "Drop Layer"}"`,
+        "start = 0",
+        "duration = 1",
+        "z_index = 2",
+        "",
+        "[tracks.layers.content]",
+        `type = "${assetKind}"`,
+        `asset_id = "${assetId}"`,
+        "",
+        "[tracks.layers.transform]",
+        "x = 0",
+        "y = 0",
+        "width = 320",
+        "height = 180",
+        "scale = 1",
+        "rotation = 0",
+        "opacity = 1",
+        "",
+      ].join("\n");
     window.__TAURI_TEST_CALLS__ = calls;
     window.__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args: Record<string, unknown>) => {
@@ -68,73 +141,11 @@ test.beforeEach(async ({ page }) => {
           ].join("\n");
         }
         if (cmd === "import_asset_into_project") {
-          return [
-            "[settings]",
-            'title = "E2E"',
-            "width = 1080",
-            "height = 1920",
-            "fps = 30",
-            "sample_rate = 48000",
-            "duration = 1",
-            'output = "output/movie.mp4"',
-            'asset_mode = "copy"',
-            "",
-            "[[assets]]",
-            'id = "hero"',
-            'kind = "image"',
-            'path = "media/image/hero.png"',
-            "",
-            "[[assets]]",
-            'id = "import"',
-            'kind = "image"',
-            'path = "media/image/import.png"',
-            "",
-            "[[tracks]]",
-            'id = "v1"',
-            'name = "V1 Main Video"',
-            'kind = "video"',
-            "",
-            "[[tracks.layers]]",
-            'id = "hero-layer"',
-            'label = "Hero Layer"',
-            "start = 0",
-            "duration = 1",
-            "z_index = 1",
-            "",
-            "[tracks.layers.content]",
-            'type = "image"',
-            'asset_id = "hero"',
-            "",
-            "[tracks.layers.transform]",
-            "x = 0",
-            "y = 0",
-            "width = 320",
-            "height = 180",
-            "scale = 1",
-            "rotation = 0",
-            "opacity = 1",
-            "",
-            "[[tracks.layers]]",
-            'id = "import-layer"',
-            'label = "Import Layer"',
-            "start = 0",
-            "duration = 1",
-            "z_index = 2",
-            "",
-            "[tracks.layers.content]",
-            'type = "image"',
-            'asset_id = "import"',
-            "",
-            "[tracks.layers.transform]",
-            "x = 0",
-            "y = 0",
-            "width = 320",
-            "height = 180",
-            "scale = 1",
-            "rotation = 0",
-            "opacity = 1",
-            "",
-          ].join("\n");
+          const sourcePath = String(args.sourcePath);
+          if (sourcePath.endsWith("drop.wav")) {
+            return importedProjectToml("drop", "audio", "media/audio/drop.wav");
+          }
+          return importedProjectToml("import", "image", "media/image/import.png");
         }
         return null;
       },
@@ -191,4 +202,33 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[tracks.layers]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('label = "Hero Layer"'));
   expect(calls[3].args.toml).toEqual(expect.stringContaining('path = "media/image/import.png"'));
+});
+
+test("Assetsペインへのdropでassetとlayerを取り込める", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "プロジェクトを開く" }).click();
+  await page.getByRole("region", { name: "アセット" }).dispatchEvent("dragover", {
+    dataTransfer: await page.evaluateHandle(() => new DataTransfer()),
+  });
+  await page.getByRole("region", { name: "アセット" }).dispatchEvent("drop", {
+    dataTransfer: await page.evaluateHandle(() => {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData("text/plain", "/tmp/drop.wav");
+      return dataTransfer;
+    }),
+  });
+
+  await expect(page.getByText("アセットを取り込みました")).toBeVisible();
+  await expect(page.getByRole("button", { name: "drop audio", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Drop Layer" })).toBeVisible();
+
+  const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
+  expect(calls).toEqual([
+    { cmd: "load_project", args: { path: "mm.toml" } },
+    {
+      cmd: "import_asset_into_project",
+      args: { projectPath: "mm.toml", sourcePath: "/tmp/drop.wav", kind: "audio" },
+    },
+  ]);
 });
