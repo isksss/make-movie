@@ -7,4 +7,6 @@ dist/
 *.tsbuildinfo
 apps/mm-gui/vite.config.js
 apps/mm-gui/vite.config.d.ts
+apps/mm-gui/playwright-report/
+apps/mm-gui/test-results/
 apps/mm-gui/src-tauri/gen/

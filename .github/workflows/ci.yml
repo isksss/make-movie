@@ -59,11 +59,17 @@ jobs:
       - name: Install dependencies
         run: pnpm --dir apps/mm-gui install --frozen-lockfile
 
+      - name: Install Playwright browser
+        run: pnpm --dir apps/mm-gui exec playwright install --with-deps chromium
+
       - name: Lint
         run: pnpm --dir apps/mm-gui lint
 
       - name: Test
         run: pnpm --dir apps/mm-gui test
+
+      - name: E2E
+        run: pnpm --dir apps/mm-gui e2e
 
       - name: Build
         run: pnpm --dir apps/mm-gui build
