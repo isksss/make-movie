@@ -43,6 +43,36 @@ describe("projectToml", () => {
     expect(toml).toContain("[[tracks.layers.animations.keyframes]]");
   });
 
+  it("plugin宣言をserializeできる", () => {
+    const toml = serializeProjectToToml({
+      ...initialProject,
+      plugins: [
+        {
+          repository: "github",
+          owner: "isksss",
+          repo: "gui-theme",
+          version: "1.0.0",
+        },
+        {
+          repository: "url",
+          url: "https://example.com/plugin.wasm",
+          version: "2.0.0",
+        },
+        {
+          repository: "local",
+          path: "./plugins/local-theme",
+        },
+      ],
+    });
+
+    expect(toml).toContain("[[plugin]]");
+    expect(toml).toContain('repository = "github"');
+    expect(toml).toContain('owner = "isksss"');
+    expect(toml).toContain('repo = "gui-theme"');
+    expect(toml).toContain('url = "https://example.com/plugin.wasm"');
+    expect(toml).toContain('path = "./plugins/local-theme"');
+  });
+
   it("TOMLからProjectStateへparseできる", () => {
     const parsed = parseProjectToml(`
 [settings]
@@ -64,6 +94,16 @@ id = "scene-1"
 name = "Opening"
 start = 0
 duration = 6
+
+[[plugin]]
+repository = "github"
+owner = "isksss"
+repo = "gui-theme"
+version = "1.0.0"
+
+[[plugin]]
+repository = "local"
+path = "./plugins/local-theme"
 
 [[tracks]]
 id = "v1"
@@ -107,6 +147,18 @@ opacity = 1
       start: 0,
       duration: 6,
     });
+    expect(parsed.plugins).toEqual([
+      {
+        repository: "github",
+        owner: "isksss",
+        repo: "gui-theme",
+        version: "1.0.0",
+      },
+      {
+        repository: "local",
+        path: "./plugins/local-theme",
+      },
+    ]);
     expect(parsed.tracks[0].id).toBe("v1");
     expect(parsed.layers[0]).toMatchObject({
       id: "hero-layer",
@@ -136,6 +188,7 @@ output = "output/no-scenes.mp4"
 `);
 
     expect(parsed.scenes).toEqual(initialProject.scenes);
+    expect(parsed.plugins).toEqual([]);
   });
 
   it("audio trimはCore互換のミリ秒TOMLとして往復できる", () => {

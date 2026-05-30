@@ -77,6 +77,7 @@ export const initialProject: ProjectState = {
     { id: "a2", name: "A2 BGM", kind: "audio" },
   ],
   scenes: [{ id: "intro", name: "Intro", start: 0, duration: 12 }],
+  plugins: [],
   layers: [
     {
       id: "title",
