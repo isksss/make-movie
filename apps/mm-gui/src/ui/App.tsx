@@ -21,7 +21,7 @@ import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
-import type { ProjectState } from "../types";
+import type { AssetKind, ProjectState } from "../types";
 import { messages } from "./i18n";
 import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
@@ -72,6 +72,15 @@ export function App() {
       setCommandStatus(error instanceof Error ? error.message : String(error));
     }
   };
+  const importAssetFromPath = (sourcePath: string) =>
+    runCommand(async () => {
+      const toml = await commands.importAssetIntoProject(
+        defaultProjectPath,
+        sourcePath,
+        inferAssetKind(sourcePath),
+      );
+      setProject(parseProjectToml(toml, project));
+    }, t.imported);
 
   return (
     <div className="app-shell">
@@ -100,19 +109,7 @@ export function App() {
           >
             <Save size={18} />
           </button>
-          <button
-            onClick={() =>
-              runCommand(async () => {
-                const toml = await commands.importAssetIntoProject(
-                  defaultProjectPath,
-                  defaultImportPath,
-                  "image",
-                );
-                setProject(parseProjectToml(toml, project));
-              }, t.imported)
-            }
-            title={t.importAsset}
-          >
+          <button onClick={() => importAssetFromPath(defaultImportPath)} title={t.importAsset}>
             <Import size={18} />
           </button>
           <button
@@ -149,7 +146,18 @@ export function App() {
       </header>
 
       <main className="workspace">
-        <section className="assets-pane" aria-label={t.assets}>
+        <section
+          className="assets-pane"
+          aria-label={t.assets}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            const sourcePath = droppedSourcePath(event.dataTransfer);
+            if (sourcePath) {
+              void importAssetFromPath(sourcePath);
+            }
+          }}
+        >
           <div className="pane-heading">
             <Box size={16} />
             <span>{t.assets}</span>
@@ -747,4 +755,50 @@ export function App() {
       </main>
     </div>
   );
+}
+
+function droppedSourcePath(dataTransfer: DataTransfer): string | null {
+  const file = dataTransfer.files.item(0);
+  const filePath = file ? pathFromFile(file) : null;
+  if (filePath) {
+    return filePath;
+  }
+  const uriList = dataTransfer.getData("text/uri-list");
+  if (uriList) {
+    const uri = uriList
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith("#"));
+    if (uri) {
+      return decodeDroppedPath(uri);
+    }
+  }
+  const text = dataTransfer.getData("text/plain").trim();
+  return text ? decodeDroppedPath(text) : null;
+}
+
+function pathFromFile(file: File): string | null {
+  const candidate = file as File & { path?: string };
+  return candidate.path && candidate.path.trim() ? candidate.path : null;
+}
+
+function decodeDroppedPath(value: string): string {
+  if (!value.startsWith("file://")) {
+    return value;
+  }
+  try {
+    return decodeURIComponent(new URL(value).pathname);
+  } catch {
+    return value.replace(/^file:\/\//, "");
+  }
+}
+
+function inferAssetKind(sourcePath: string): AssetKind {
+  const extension = sourcePath.split(/[?#]/)[0]?.split(".").pop()?.toLowerCase();
+  if (extension && ["mp4", "mov", "mkv", "webm"].includes(extension)) return "video";
+  if (extension && ["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(extension)) return "audio";
+  if (extension && ["srt", "ass", "vtt"].includes(extension)) return "subtitle";
+  if (extension && ["ttf", "otf", "woff", "woff2"].includes(extension)) return "font";
+  if (extension && ["svg"].includes(extension)) return "mask";
+  return "image";
 }
