@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/mm-core",
+  "crates/mm-render",
+  "crates/mm-plugin-runtime",
+  "crates/mm-cli",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/isksss/make-movie"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+image = "0.25"
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+thiserror = "2"
+toml = "0.8"
+which = "7"

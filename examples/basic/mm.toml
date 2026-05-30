@@ -1,0 +1,36 @@
+[settings]
+title = "Basic Example"
+width = 320
+height = 180
+fps = 30
+sample_rate = 48000
+duration = 1.0
+output = "output/basic.mp4"
+asset_mode = "copy"
+
+[[tracks]]
+id = "v1"
+name = "V1 Main Video"
+kind = "video"
+
+[[tracks.layers]]
+id = "title"
+start = 0.0
+duration = 1.0
+z_index = 1
+
+[tracks.layers.content]
+type = "text"
+text = "make-movie"
+font_size = 48.0
+color = "#ffffff"
+align = "center"
+
+[tracks.layers.transform]
+x = 160.0
+y = 70.0
+width = 180.0
+height = 48.0
+scale = 1.0
+rotation = 0.0
+opacity = 1.0
