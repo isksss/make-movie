@@ -909,7 +909,11 @@ fn apply_wipe_transition(frame: &mut RgbaImage, shape: &WipeShape, progress: f32
     let progress = progress.clamp(0.0, 1.0);
     match shape {
         WipeShape::Circle => apply_circle_wipe(frame, progress),
-        WipeShape::RoundedRect { radius, .. } => apply_rounded_rect_wipe(frame, *radius, progress),
+        WipeShape::RoundedRect {
+            radius,
+            border,
+            shadow,
+        } => apply_rounded_rect_wipe(frame, *radius, border.as_ref(), shadow.as_ref(), progress),
     }
 }
 
@@ -927,33 +931,86 @@ fn apply_circle_wipe(frame: &mut RgbaImage, progress: f32) {
     }
 }
 
-fn apply_rounded_rect_wipe(frame: &mut RgbaImage, radius: f32, progress: f32) {
+fn apply_rounded_rect_wipe(
+    frame: &mut RgbaImage,
+    radius: f32,
+    border: Option<&mm_core::WipeBorder>,
+    shadow: Option<&TextShadow>,
+    progress: f32,
+) {
     let wipe_width = frame.width() as f32 * progress;
     let wipe_height = frame.height() as f32 * progress;
     let origin_x = (frame.width() as f32 - wipe_width) / 2.0;
     let origin_y = (frame.height() as f32 - wipe_height) / 2.0;
     let radius = radius.max(0.0).min(wipe_width.min(wipe_height) / 2.0);
+    let border_color = border.and_then(|value| parse_color(&value.color));
+    let border_width = border.map(|value| value.width.max(0.0)).unwrap_or_default();
+    let shadow_color = shadow.and_then(|value| parse_color(&value.color));
     for (x, y, pixel) in frame.enumerate_pixels_mut() {
         let px = x as f32 + 0.5;
         let py = y as f32 + 0.5;
-        if px < origin_x
-            || py < origin_y
-            || px > origin_x + wipe_width
-            || py > origin_y + wipe_height
-        {
+        let distance = rounded_rect_signed_distance(
+            px,
+            py,
+            origin_x,
+            origin_y,
+            wipe_width,
+            wipe_height,
+            radius,
+        );
+        if distance > 0.0 {
+            if let (Some(shadow), Some(color)) = (shadow, shadow_color) {
+                let shadow_distance = rounded_rect_signed_distance(
+                    px - shadow.offset_x,
+                    py - shadow.offset_y,
+                    origin_x,
+                    origin_y,
+                    wipe_width,
+                    wipe_height,
+                    radius,
+                );
+                if shadow_distance <= shadow.blur.max(0.0) {
+                    let falloff = if shadow_distance <= 0.0 {
+                        1.0
+                    } else {
+                        1.0 - shadow_distance / shadow.blur.max(1.0)
+                    };
+                    let alpha = (f32::from(color[3]) * falloff).round().clamp(0.0, 255.0) as u8;
+                    *pixel = Rgba([color[0], color[1], color[2], alpha]);
+                    continue;
+                }
+            }
             pixel[3] = 0;
             continue;
         }
-        let local_x = px - origin_x;
-        let local_y = py - origin_y;
-        let corner_x = local_x.clamp(radius, wipe_width - radius);
-        let corner_y = local_y.clamp(radius, wipe_height - radius);
-        let dx = local_x - corner_x;
-        let dy = local_y - corner_y;
-        if dx * dx + dy * dy > radius * radius {
-            pixel[3] = 0;
+        if let Some(color) = border_color {
+            if border_width > 0.0 && -distance <= border_width {
+                *pixel = color;
+            }
         }
     }
+}
+
+fn rounded_rect_signed_distance(
+    px: f32,
+    py: f32,
+    origin_x: f32,
+    origin_y: f32,
+    width: f32,
+    height: f32,
+    radius: f32,
+) -> f32 {
+    let center_x = origin_x + width / 2.0;
+    let center_y = origin_y + height / 2.0;
+    let half_width = (width / 2.0 - radius).max(0.0);
+    let half_height = (height / 2.0 - radius).max(0.0);
+    let qx = (px - center_x).abs() - half_width;
+    let qy = (py - center_y).abs() - half_height;
+    let outside_x = qx.max(0.0);
+    let outside_y = qy.max(0.0);
+    let outside = (outside_x * outside_x + outside_y * outside_y).sqrt();
+    let inside = qx.max(qy).min(0.0);
+    outside + inside - radius
 }
 
 fn resolve_layer_transform(layer: &Layer, local_time: f64) -> Transform {
@@ -1831,8 +1888,8 @@ mod tests {
     use super::*;
     use mm_core::{
         AnimatedProperty, Animation, Asset, AssetKind, AssetMode, AudioLayer, Crop, Easing, Effect,
-        ImageLayer, Keyframe, Mask, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
-        Transition, TtsProviderKind, VideoLayer, VoiceLayer, WipeShape,
+        ImageLayer, Keyframe, Mask, ProjectSettings, SubtitleLayer, TextLayer, TextShadow, Track,
+        TrackKind, Transition, TtsProviderKind, VideoLayer, VoiceLayer, WipeBorder, WipeShape,
     };
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -2029,6 +2086,47 @@ mod tests {
         layer.transition = Some(Transition::Flash { duration: 1.0 });
         apply_transition_to_frame(&mut flash_frame, layer, 0.1);
         assert!(flash_frame.get_pixel(0, 0)[0] > 20);
+    }
+
+    #[test]
+    fn rounded_rect_wipe_draws_border_and_shadow() {
+        let mut project = text_project();
+        let layer = &mut project.tracks[0].layers[0];
+        layer.duration = 2.0;
+
+        let mut border_frame = RgbaImage::from_pixel(20, 20, Rgba([20, 20, 20, 255]));
+        layer.transition = Some(Transition::Wipe {
+            duration: 1.0,
+            shape: WipeShape::RoundedRect {
+                radius: 2.0,
+                border: Some(WipeBorder {
+                    color: "#ff0000".to_string(),
+                    width: 2.0,
+                }),
+                shadow: None,
+            },
+        });
+        apply_transition_to_frame(&mut border_frame, layer, 0.5);
+        assert_eq!(*border_frame.get_pixel(5, 10), Rgba([255, 0, 0, 255]));
+        assert_eq!(border_frame.get_pixel(0, 0)[3], 0);
+
+        let mut shadow_frame = RgbaImage::from_pixel(20, 20, Rgba([20, 20, 20, 255]));
+        layer.transition = Some(Transition::Wipe {
+            duration: 1.0,
+            shape: WipeShape::RoundedRect {
+                radius: 2.0,
+                border: None,
+                shadow: Some(TextShadow {
+                    color: "#0000ff".to_string(),
+                    offset_x: 3.0,
+                    offset_y: 0.0,
+                    blur: 4.0,
+                }),
+            },
+        });
+        apply_transition_to_frame(&mut shadow_frame, layer, 0.5);
+        assert_eq!(shadow_frame.get_pixel(16, 10)[2], 255);
+        assert!(shadow_frame.get_pixel(16, 10)[3] > 0);
     }
 
     #[test]
