@@ -848,6 +848,198 @@ pub fn import_asset(
     })
 }
 
+pub fn import_asset_into_project(
+    project_path: impl AsRef<Path>,
+    source_path: impl AsRef<Path>,
+    kind: AssetKind,
+) -> Result<Project> {
+    let project_path = project_path.as_ref();
+    let project_root = project_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let mut project = load_project(project_path)?;
+    let mut asset = import_asset(&project_root, source_path, kind)?;
+    asset.id = unique_asset_id(&project, &asset.id);
+    let layer = imported_asset_layer(&project, &asset);
+    project.assets.push(asset);
+    if let Some(layer) = layer {
+        let track_index = ensure_import_track(&mut project, kind);
+        project.tracks[track_index].layers.push(layer);
+    }
+    save_project(&project, project_path)?;
+    Ok(project)
+}
+
+fn unique_asset_id(project: &Project, base: &str) -> String {
+    let normalized = if base.trim().is_empty() {
+        "asset"
+    } else {
+        base
+    };
+    if !project.assets.iter().any(|asset| asset.id == normalized) {
+        return normalized.to_string();
+    }
+    for index in 2.. {
+        let candidate = format!("{normalized}-{index}");
+        if !project.assets.iter().any(|asset| asset.id == candidate) {
+            return candidate;
+        }
+    }
+    unreachable!("usize の探索は必ず終了する")
+}
+
+fn unique_layer_id(project: &Project, base: &str) -> String {
+    let normalized = if base.trim().is_empty() {
+        "layer"
+    } else {
+        base
+    };
+    if !project
+        .tracks
+        .iter()
+        .flat_map(|track| track.layers.iter())
+        .any(|layer| layer.id == normalized)
+    {
+        return normalized.to_string();
+    }
+    for index in 2.. {
+        let candidate = format!("{normalized}-{index}");
+        if !project
+            .tracks
+            .iter()
+            .flat_map(|track| track.layers.iter())
+            .any(|layer| layer.id == candidate)
+        {
+            return candidate;
+        }
+    }
+    unreachable!("usize の探索は必ず終了する")
+}
+
+fn ensure_import_track(project: &mut Project, kind: AssetKind) -> usize {
+    let target_kind = match kind {
+        AssetKind::Audio => TrackKind::Audio,
+        AssetKind::Video
+        | AssetKind::Image
+        | AssetKind::Subtitle
+        | AssetKind::Font
+        | AssetKind::Mask => TrackKind::Video,
+    };
+    if let Some(index) = project
+        .tracks
+        .iter()
+        .position(|track| track.kind == target_kind)
+    {
+        return index;
+    }
+    let (id, name) = match target_kind {
+        TrackKind::Video => ("v1", "V1 Main Video"),
+        TrackKind::Audio => ("a1", "A1 Voice"),
+    };
+    let track_id = unique_track_id(project, id);
+    project.tracks.push(Track {
+        id: track_id,
+        name: name.to_string(),
+        kind: target_kind,
+        layers: vec![],
+    });
+    project.tracks.len() - 1
+}
+
+fn unique_track_id(project: &Project, base: &str) -> String {
+    if !project.tracks.iter().any(|track| track.id == base) {
+        return base.to_string();
+    }
+    for index in 2.. {
+        let candidate = format!("{base}-{index}");
+        if !project.tracks.iter().any(|track| track.id == candidate) {
+            return candidate;
+        }
+    }
+    unreachable!("usize の探索は必ず終了する")
+}
+
+fn imported_asset_layer(project: &Project, asset: &Asset) -> Option<Layer> {
+    if matches!(asset.kind, AssetKind::Font | AssetKind::Mask) {
+        return None;
+    }
+    let layer_id = unique_layer_id(project, &format!("{}-layer", asset.id));
+    let duration = project.settings.duration.max(0.001);
+    let z_index = project
+        .tracks
+        .iter()
+        .flat_map(|track| track.layers.iter())
+        .map(|layer| layer.z_index)
+        .max()
+        .unwrap_or(0)
+        + 1;
+    Some(Layer {
+        id: layer_id,
+        start: 0.0,
+        duration,
+        z_index,
+        content: imported_layer_content(asset),
+        transform: imported_asset_transform(project, asset.kind),
+        effects: vec![],
+        animations: vec![],
+        transition: None,
+    })
+}
+
+fn imported_layer_content(asset: &Asset) -> LayerContent {
+    match asset.kind {
+        AssetKind::Video => LayerContent::Video(VideoLayer {
+            asset_id: asset.id.clone(),
+            crop: None,
+            trim_start: None,
+            trim_end: None,
+            fit: None,
+        }),
+        AssetKind::Image => LayerContent::Image(ImageLayer {
+            asset_id: asset.id.clone(),
+            crop: None,
+            mask: None,
+            fit: Some(FitMode::Contain),
+        }),
+        AssetKind::Audio => LayerContent::Audio(AudioLayer {
+            asset_id: asset.id.clone(),
+            trim_start: None,
+            trim_end: None,
+        }),
+        AssetKind::Subtitle => LayerContent::Subtitle(SubtitleLayer {
+            asset_id: asset.id.clone(),
+        }),
+        AssetKind::Font | AssetKind::Mask => {
+            unreachable!("Font/Mask asset は timeline layer を生成しない")
+        }
+    }
+}
+
+fn imported_asset_transform(project: &Project, kind: AssetKind) -> Transform {
+    match kind {
+        AssetKind::Video | AssetKind::Image => Transform {
+            x: 0.0,
+            y: 0.0,
+            width: project.settings.width as f32,
+            height: project.settings.height as f32,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        },
+        AssetKind::Subtitle => Transform {
+            x: project.settings.width as f32 / 2.0,
+            y: project.settings.height as f32 * 0.82,
+            width: project.settings.width as f32 * 0.9,
+            height: 80.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        },
+        AssetKind::Audio | AssetKind::Font | AssetKind::Mask => Transform::default(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -960,6 +1152,48 @@ mod tests {
         assert_eq!(asset.id, "source");
         assert_eq!(asset.path, PathBuf::from("media/image/source.png"));
         assert!(dir.path().join(asset.path).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn import_asset_into_project_registers_asset_and_layer() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let project_path = dir.path().join("mm.toml");
+        save_project(
+            &Project {
+                settings: ProjectSettings {
+                    title: "Import".to_string(),
+                    width: 320,
+                    height: 180,
+                    fps: 30,
+                    sample_rate: 48000,
+                    duration: 2.0,
+                    output: PathBuf::from("output/movie.mp4"),
+                    asset_mode: AssetMode::Copy,
+                    ffmpeg: None,
+                },
+                assets: vec![],
+                tracks: vec![],
+                scenes: vec![],
+                plugins: vec![],
+            },
+            &project_path,
+        )?;
+        let source_path = dir.path().join("photo.png");
+        fs::write(&source_path, b"image")?;
+
+        let project = import_asset_into_project(&project_path, &source_path, AssetKind::Image)?;
+
+        assert_eq!(project.assets.len(), 1);
+        assert_eq!(project.tracks.len(), 1);
+        assert_eq!(project.tracks[0].layers.len(), 1);
+        assert!(dir.path().join("media/image/photo.png").exists());
+        let saved = load_project(&project_path)?;
+        assert_eq!(saved.assets[0].id, "photo");
+        assert!(matches!(
+            saved.tracks[0].layers[0].content,
+            LayerContent::Image(_)
+        ));
         Ok(())
     }
 
