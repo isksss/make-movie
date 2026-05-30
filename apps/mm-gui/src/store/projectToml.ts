@@ -8,6 +8,7 @@ import {
 import type {
   Asset,
   AssetKind,
+  AssetMode,
   FitMode,
   LayerEffect,
   LayerTransition,
@@ -43,9 +44,12 @@ export function serializeProjectToToml(project: ProjectState): string {
     `sample_rate = ${project.settings.sampleRate}`,
     `duration = ${project.settings.duration}`,
     `output = ${quote(project.settings.output)}`,
-    'asset_mode = "copy"',
+    `asset_mode = ${quote(project.settings.assetMode)}`,
     "",
   ];
+  if (project.settings.ffmpeg) {
+    lines.push(`ffmpeg = ${quote(project.settings.ffmpeg)}`, "");
+  }
 
   for (const asset of project.assets) {
     lines.push(
@@ -415,9 +419,15 @@ function assignValue(
 
 function assignSettings(project: ProjectState, key: string, value: string | number) {
   if (key === "sample_rate") project.settings.sampleRate = Number(value);
+  else if (key === "asset_mode") project.settings.assetMode = parseAssetMode(value);
+  else if (key === "ffmpeg") project.settings.ffmpeg = String(value);
   else if (key === "title" || key === "output") project.settings[key] = String(value);
   else if (key in project.settings)
     project.settings[key as "width" | "height" | "fps" | "duration"] = Number(value);
+}
+
+function parseAssetMode(value: string | number): AssetMode {
+  return String(value) === "link" ? "link" : "copy";
 }
 
 function assignAsset(asset: Asset, key: string, value: string | number) {

@@ -6,6 +6,11 @@ describe("projectToml", () => {
   it("ProjectStateをCore互換TOMLへserializeできる", () => {
     const toml = serializeProjectToToml({
       ...initialProject,
+      settings: {
+        ...initialProject.settings,
+        assetMode: "link",
+        ffmpeg: "/usr/bin/ffmpeg",
+      },
       layers: [
         {
           ...initialProject.layers[1],
@@ -29,6 +34,8 @@ describe("projectToml", () => {
     });
 
     expect(toml).toContain("[[assets]]");
+    expect(toml).toContain('asset_mode = "link"');
+    expect(toml).toContain('ffmpeg = "/usr/bin/ffmpeg"');
     expect(toml).toContain("[[scenes]]");
     expect(toml).toContain('name = "Intro"');
     expect(toml).toContain("[[tracks]]");
@@ -112,6 +119,8 @@ fps = 60
 sample_rate = 44100
 duration = 12
 output = "output/loaded.mp4"
+asset_mode = "link"
+ffmpeg = "/opt/mm/ffmpeg"
 
 [[assets]]
 id = "hero"
@@ -165,6 +174,8 @@ opacity = 1
 
     expect(parsed.settings.title).toBe("Loaded");
     expect(parsed.settings.sampleRate).toBe(44100);
+    expect(parsed.settings.assetMode).toBe("link");
+    expect(parsed.settings.ffmpeg).toBe("/opt/mm/ffmpeg");
     expect(parsed.assets[0]).toEqual({
       id: "hero",
       kind: "video",
@@ -377,6 +388,18 @@ output = "output/no-scenes.mp4"
 
     expect(parsed.scenes).toEqual(initialProject.scenes);
     expect(parsed.plugins).toEqual([]);
+  });
+
+  it("ffmpeg未指定ではffmpeg行をserializeしない", () => {
+    const toml = serializeProjectToToml({
+      ...initialProject,
+      settings: {
+        ...initialProject.settings,
+        ffmpeg: null,
+      },
+    });
+
+    expect(toml).not.toContain("\nffmpeg = ");
   });
 
   it("audio trimはCore互換のミリ秒TOMLとして往復できる", () => {
