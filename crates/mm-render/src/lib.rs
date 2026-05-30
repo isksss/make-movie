@@ -2,8 +2,9 @@ use ab_glyph::{point, Font, FontArc, GlyphId, PxScale, ScaleFont};
 use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
-    AnimatedProperty, Animation, AssetKind, AudioLayer, Easing, Effect, Layer, LayerContent,
-    Project, SubtitleLayer, TextAlign, TextLayer, TextShadow, TextStroke, Transform, VideoLayer,
+    AnimatedProperty, Animation, AssetKind, AudioLayer, Crop, Easing, Effect, Layer, LayerContent,
+    Mask, Project, SubtitleLayer, TextAlign, TextLayer, TextShadow, TextStroke, Transform,
+    VideoLayer,
 };
 use std::env;
 use std::fs;
@@ -354,6 +355,7 @@ struct PlannedVideoLayer {
     opacity: f32,
     trim_start: f64,
     trim_end: Option<f64>,
+    crop: Option<Crop>,
 }
 
 impl PlannedVideoLayer {
@@ -380,6 +382,7 @@ impl PlannedVideoLayer {
             opacity: layer.transform.opacity.clamp(0.0, 1.0),
             trim_start: content.trim_start.unwrap_or(0.0).max(0.0),
             trim_end: content.trim_end,
+            crop: content.crop,
         }
     }
 
@@ -388,11 +391,16 @@ impl PlannedVideoLayer {
             .trim_end
             .unwrap_or(self.trim_start + self.duration)
             .max(self.trim_start);
+        let crop_filter = self
+            .crop
+            .map(|crop| format!("crop={}:{}:{}:{},", crop.width, crop.height, crop.x, crop.y))
+            .unwrap_or_default();
         format!(
-            "[{input_index}:v]trim=start={}:end={},setpts=PTS-STARTPTS+{}/TB,scale={}:{},format=rgba,colorchannelmixer=aa={}[{label}]",
+            "[{input_index}:v]trim=start={}:end={},setpts=PTS-STARTPTS+{}/TB,{}scale={}:{},format=rgba,colorchannelmixer=aa={}[{label}]",
             self.trim_start,
             trim_end,
             self.start,
+            crop_filter,
             self.width,
             self.height,
             self.opacity
@@ -707,7 +715,9 @@ fn draw_layer(
             let image = image::open(&path)
                 .with_context(|| format!("画像を読み込めません: {}", path.display()))?
                 .to_rgba8();
+            let image = apply_crop(image, content.crop);
             let image = apply_image_effects(image, &layer.effects);
+            let image = apply_mask(image, content.mask.as_ref());
             draw_image(frame, &image, transform);
         }
         LayerContent::Text(content) => {
@@ -878,6 +888,7 @@ fn apply_image_effects(mut image: RgbaImage, effects: &[Effect]) -> RgbaImage {
             Effect::Contrast { amount } => imageops::contrast(&image, amount),
             Effect::Saturation { amount } => adjust_saturation(&image, amount),
             Effect::Pixelate { size } if size > 1 => pixelate(&image, size),
+            Effect::MotionBlur { amount } if amount > 0.0 => motion_blur(&image, amount),
             Effect::FadeIn { .. }
             | Effect::FadeOut { .. }
             | Effect::Blur { .. }
@@ -888,6 +899,81 @@ fn apply_image_effects(mut image: RgbaImage, effects: &[Effect]) -> RgbaImage {
         };
     }
     image
+}
+
+fn apply_crop(image: RgbaImage, crop: Option<Crop>) -> RgbaImage {
+    let Some(crop) = crop else {
+        return image;
+    };
+    if crop.width == 0 || crop.height == 0 || crop.x >= image.width() || crop.y >= image.height() {
+        return image;
+    }
+    let width = crop.width.min(image.width() - crop.x);
+    let height = crop.height.min(image.height() - crop.y);
+    imageops::crop_imm(&image, crop.x, crop.y, width, height).to_image()
+}
+
+fn apply_mask(mut image: RgbaImage, mask: Option<&Mask>) -> RgbaImage {
+    match mask {
+        Some(Mask::Circle) => apply_ellipse_mask(&mut image, true),
+        Some(Mask::Ellipse) => apply_ellipse_mask(&mut image, false),
+        Some(Mask::RoundedRect { radius }) => apply_rounded_rect_mask(&mut image, *radius),
+        Some(Mask::Svg { .. }) | None => {}
+    }
+    image
+}
+
+fn apply_ellipse_mask(image: &mut RgbaImage, force_circle: bool) {
+    let width = image.width() as f32;
+    let height = image.height() as f32;
+    let radius_x = if force_circle {
+        width.min(height) / 2.0
+    } else {
+        width / 2.0
+    };
+    let radius_y = if force_circle {
+        width.min(height) / 2.0
+    } else {
+        height / 2.0
+    };
+    let center_x = width / 2.0;
+    let center_y = height / 2.0;
+    for (x, y, pixel) in image.enumerate_pixels_mut() {
+        let dx = (x as f32 + 0.5 - center_x) / radius_x.max(0.1);
+        let dy = (y as f32 + 0.5 - center_y) / radius_y.max(0.1);
+        if dx * dx + dy * dy > 1.0 {
+            pixel[3] = 0;
+        }
+    }
+}
+
+fn apply_rounded_rect_mask(image: &mut RgbaImage, radius: f32) {
+    let width = image.width() as f32;
+    let height = image.height() as f32;
+    let radius = radius.max(0.0).min(width.min(height) / 2.0);
+    for (x, y, pixel) in image.enumerate_pixels_mut() {
+        let px = x as f32 + 0.5;
+        let py = y as f32 + 0.5;
+        let corner_x = if px < radius {
+            radius
+        } else if px > width - radius {
+            width - radius
+        } else {
+            px
+        };
+        let corner_y = if py < radius {
+            radius
+        } else if py > height - radius {
+            height - radius
+        } else {
+            py
+        };
+        let dx = px - corner_x;
+        let dy = py - corner_y;
+        if dx * dx + dy * dy > radius * radius {
+            pixel[3] = 0;
+        }
+    }
 }
 
 fn adjust_saturation(image: &RgbaImage, amount: f32) -> RgbaImage {
@@ -903,6 +989,33 @@ fn adjust_saturation(image: &RgbaImage, amount: f32) -> RgbaImage {
         pixel[2] = (luma + (b - luma) * saturation).round().clamp(0.0, 255.0) as u8;
     }
     adjusted
+}
+
+fn motion_blur(image: &RgbaImage, amount: f32) -> RgbaImage {
+    let radius = amount.round().max(1.0) as i32;
+    let mut blurred = image.clone();
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let mut sum = [0u32; 4];
+            let mut count = 0u32;
+            for offset in -radius..=radius {
+                let sample_x = x as i32 + offset;
+                if sample_x < 0 || sample_x >= image.width() as i32 {
+                    continue;
+                }
+                let pixel = image.get_pixel(sample_x as u32, y);
+                for channel in 0..4 {
+                    sum[channel] += u32::from(pixel[channel]);
+                }
+                count += 1;
+            }
+            let target = blurred.get_pixel_mut(x, y);
+            for channel in 0..4 {
+                target[channel] = (sum[channel] / count.max(1)) as u8;
+            }
+        }
+    }
+    blurred
 }
 
 fn pixelate(image: &RgbaImage, size: u32) -> RgbaImage {
@@ -925,14 +1038,52 @@ fn pixelate(image: &RgbaImage, size: u32) -> RgbaImage {
 fn draw_image(frame: &mut RgbaImage, image: &RgbaImage, transform: Transform) {
     let width = resolved_size(transform.width, image.width());
     let height = resolved_size(transform.height, image.height());
-    let resized = imageops::resize(image, width, height, imageops::FilterType::Lanczos3);
-    alpha_blend(
-        frame,
-        &resized,
-        transform.x.round() as i32,
-        transform.y.round() as i32,
-        transform.opacity,
-    );
+    let mut resized = imageops::resize(image, width, height, imageops::FilterType::Lanczos3);
+    let mut x = transform.x.round() as i32;
+    let mut y = transform.y.round() as i32;
+    if transform.rotation != 0.0 {
+        let rotated = rotate_image(&resized, transform.rotation);
+        x -= (rotated.width() as i32 - resized.width() as i32) / 2;
+        y -= (rotated.height() as i32 - resized.height() as i32) / 2;
+        resized = rotated;
+    }
+    alpha_blend(frame, &resized, x, y, transform.opacity);
+}
+
+fn rotate_image(image: &RgbaImage, degrees: f32) -> RgbaImage {
+    let radians = degrees.to_radians();
+    let sin = radians.sin().abs();
+    let cos = radians.cos().abs();
+    let new_width = (image.width() as f32 * cos + image.height() as f32 * sin)
+        .ceil()
+        .max(1.0) as u32;
+    let new_height = (image.width() as f32 * sin + image.height() as f32 * cos)
+        .ceil()
+        .max(1.0) as u32;
+    let mut rotated = RgbaImage::from_pixel(new_width, new_height, Rgba([0, 0, 0, 0]));
+    let source_cx = image.width() as f32 / 2.0;
+    let source_cy = image.height() as f32 / 2.0;
+    let target_cx = new_width as f32 / 2.0;
+    let target_cy = new_height as f32 / 2.0;
+    let cos = radians.cos();
+    let sin = radians.sin();
+    for y in 0..new_height {
+        for x in 0..new_width {
+            let dx = x as f32 + 0.5 - target_cx;
+            let dy = y as f32 + 0.5 - target_cy;
+            let source_x = cos * dx + sin * dy + source_cx;
+            let source_y = -sin * dx + cos * dy + source_cy;
+            if source_x >= 0.0
+                && source_y >= 0.0
+                && source_x < image.width() as f32
+                && source_y < image.height() as f32
+            {
+                let pixel = image.get_pixel(source_x.floor() as u32, source_y.floor() as u32);
+                rotated.put_pixel(x, y, *pixel);
+            }
+        }
+    }
+    rotated
 }
 
 fn resolved_size(value: f32, fallback: u32) -> u32 {
@@ -944,6 +1095,26 @@ fn resolved_size(value: f32, fallback: u32) -> u32 {
 }
 
 fn draw_text_layer(frame: &mut RgbaImage, text: &TextLayer, transform: Transform, font: &FontArc) {
+    if transform.rotation != 0.0 {
+        let mut text_frame =
+            RgbaImage::from_pixel(frame.width(), frame.height(), Rgba([0, 0, 0, 0]));
+        let mut transform_without_rotation = transform;
+        transform_without_rotation.rotation = 0.0;
+        draw_text_layer_unrotated(&mut text_frame, text, transform_without_rotation, font);
+        let rotated =
+            rotate_canvas_about_point(&text_frame, transform.rotation, transform.x, transform.y);
+        alpha_blend(frame, &rotated, 0, 0, 1.0);
+        return;
+    }
+    draw_text_layer_unrotated(frame, text, transform, font);
+}
+
+fn draw_text_layer_unrotated(
+    frame: &mut RgbaImage,
+    text: &TextLayer,
+    transform: Transform,
+    font: &FontArc,
+) {
     let scale = PxScale::from(text.font_size * transform.scale.max(0.01));
     let scaled = font.as_scaled(scale);
     let line_height =
@@ -1004,6 +1175,35 @@ fn draw_text_layer(frame: &mut RgbaImage, text: &TextLayer, transform: Transform
         base_color,
         transform.opacity,
     );
+}
+
+fn rotate_canvas_about_point(
+    image: &RgbaImage,
+    degrees: f32,
+    center_x: f32,
+    center_y: f32,
+) -> RgbaImage {
+    let radians = degrees.to_radians();
+    let cos = radians.cos();
+    let sin = radians.sin();
+    let mut rotated = RgbaImage::from_pixel(image.width(), image.height(), Rgba([0, 0, 0, 0]));
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let dx = x as f32 + 0.5 - center_x;
+            let dy = y as f32 + 0.5 - center_y;
+            let source_x = cos * dx + sin * dy + center_x;
+            let source_y = -sin * dx + cos * dy + center_y;
+            if source_x >= 0.0
+                && source_y >= 0.0
+                && source_x < image.width() as f32
+                && source_y < image.height() as f32
+            {
+                let pixel = image.get_pixel(source_x.floor() as u32, source_y.floor() as u32);
+                rotated.put_pixel(x, y, *pixel);
+            }
+        }
+    }
+    rotated
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1292,12 +1492,18 @@ fn alpha_blend(frame: &mut RgbaImage, overlay: &RgbaImage, x: i32, y: i32, opaci
             let source = overlay.get_pixel(ox, oy);
             let destination = frame.get_pixel_mut(tx as u32, ty as u32);
             let alpha = (f32::from(source[3]) / 255.0) * opacity;
+            if alpha <= 0.0 {
+                continue;
+            }
             for channel in 0..3 {
                 destination[channel] = ((f32::from(source[channel]) * alpha)
                     + (f32::from(destination[channel]) * (1.0 - alpha)))
                     .round() as u8;
             }
-            destination[3] = 255;
+            destination[3] = (f32::from(source[3]) * opacity
+                + f32::from(destination[3]) * (1.0 - alpha))
+                .round()
+                .clamp(0.0, 255.0) as u8;
         }
     }
 }
@@ -1306,8 +1512,8 @@ fn alpha_blend(frame: &mut RgbaImage, overlay: &RgbaImage, x: i32, y: i32, opaci
 mod tests {
     use super::*;
     use mm_core::{
-        AnimatedProperty, Animation, Asset, AssetKind, AssetMode, AudioLayer, Easing, Effect,
-        ImageLayer, Keyframe, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
+        AnimatedProperty, Animation, Asset, AssetKind, AssetMode, AudioLayer, Crop, Easing, Effect,
+        ImageLayer, Keyframe, Mask, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
         VideoLayer,
     };
 
@@ -1473,6 +1679,78 @@ mod tests {
         let pixel = adjusted.get_pixel(0, 0);
         assert_eq!(pixel[0], pixel[1]);
         assert_eq!(pixel[1], pixel[2]);
+    }
+
+    #[test]
+    fn crop_mask_rotation_and_motion_blur_adjust_image() {
+        let mut image = RgbaImage::from_pixel(8, 8, Rgba([0, 0, 0, 0]));
+        for y in 0..8 {
+            for x in 0..8 {
+                image.put_pixel(x, y, Rgba([(x * 30) as u8, (y * 30) as u8, 100, 255]));
+            }
+        }
+
+        let cropped = apply_crop(
+            image,
+            Some(Crop {
+                x: 2,
+                y: 1,
+                width: 4,
+                height: 5,
+            }),
+        );
+        let masked = apply_mask(cropped, Some(&Mask::Circle));
+        let blurred = apply_image_effects(masked, &[Effect::MotionBlur { amount: 2.0 }]);
+        let rotated = rotate_image(&blurred, 45.0);
+
+        assert_eq!(blurred.dimensions(), (4, 5));
+        assert_eq!(blurred.get_pixel(0, 0)[3], 0);
+        assert!(rotated.width() > blurred.width());
+        assert!(rotated.height() > blurred.height());
+    }
+
+    #[test]
+    fn video_filter_includes_crop_when_present() {
+        let project = text_project();
+        let layer = Layer {
+            id: "video".to_string(),
+            start: 0.5,
+            duration: 1.0,
+            z_index: 0,
+            content: LayerContent::Video(VideoLayer {
+                asset_id: "video".to_string(),
+                crop: Some(Crop {
+                    x: 3,
+                    y: 4,
+                    width: 20,
+                    height: 10,
+                }),
+                trim_start: Some(0.2),
+                trim_end: Some(0.8),
+                fit: None,
+            }),
+            transform: Transform {
+                x: 0.0,
+                y: 0.0,
+                width: 64.0,
+                height: 32.0,
+                scale: 1.0,
+                rotation: 0.0,
+                opacity: 1.0,
+            },
+            effects: vec![],
+            animations: vec![],
+            transition: None,
+        };
+        let LayerContent::Video(content) = &layer.content else {
+            unreachable!();
+        };
+        let planned = PlannedVideoLayer::new(&project, &layer, content, PathBuf::from("video.mp4"));
+
+        let filter = planned.video_filter(1, "v");
+
+        assert!(filter.contains("crop=20:10:3:4"));
+        assert!(filter.contains("scale=64:32"));
     }
 
     #[test]
