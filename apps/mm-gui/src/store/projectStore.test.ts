@@ -64,4 +64,30 @@ describe("projectStore", () => {
     useProjectStore.getState().redo();
     expect(useProjectStore.getState().tts.text).toBe("更新後の文章");
   });
+
+  it("layer を指定時刻でCutしUndo/Redoできる", () => {
+    useProjectStore.getState().splitLayer("intro-image", 2.5);
+
+    let layers = useProjectStore.getState().project.layers;
+    expect(layers.find((item) => item.id === "intro-image")?.duration).toBe(2);
+    expect(layers.find((item) => item.id === "intro-image-split")?.start).toBe(2.5);
+    expect(layers.find((item) => item.id === "intro-image-split")?.duration).toBe(5);
+    expect(useProjectStore.getState().selectedLayerId).toBe("intro-image-split");
+
+    useProjectStore.getState().undo();
+    layers = useProjectStore.getState().project.layers;
+    expect(layers.find((item) => item.id === "intro-image")?.duration).toBe(7);
+    expect(layers.some((item) => item.id === "intro-image-split")).toBe(false);
+
+    useProjectStore.getState().redo();
+    layers = useProjectStore.getState().project.layers;
+    expect(layers.some((item) => item.id === "intro-image-split")).toBe(true);
+  });
+
+  it("layer 範囲外のCutでは履歴を追加しない", () => {
+    useProjectStore.getState().splitLayer("intro-image", 0.25);
+
+    expect(useProjectStore.getState().project.layers).toHaveLength(initialProject.layers.length);
+    expect(useProjectStore.getState().canUndo).toBe(false);
+  });
 });

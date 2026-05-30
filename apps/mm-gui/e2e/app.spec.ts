@@ -66,3 +66,35 @@ test("プロパティ編集をUndo/Redoできる", async ({ page }) => {
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.getByLabel("Start")).toHaveValue("1.2");
 });
+
+test("選択中クリップを現在時刻でCutできる", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  await page.getByLabel("Seek").fill("2.5");
+  await page.getByRole("button", { name: "Cut" }).click();
+
+  await expect(
+    page.getByRole("region", { name: "Timeline" }).getByRole("button", {
+      name: "Intro Image (2)",
+    }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Start")).toHaveValue("2.5");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(
+    page.getByRole("region", { name: "Timeline" }).getByRole("button", {
+      name: "Intro Image (2)",
+    }),
+  ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(
+    page.getByRole("region", { name: "Timeline" }).getByRole("button", {
+      name: "Intro Image (2)",
+    }),
+  ).toBeVisible();
+});

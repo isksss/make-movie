@@ -33,6 +33,7 @@ export function App() {
     selectAsset,
     selectLayer,
     moveLayer,
+    splitLayer,
     updateTtsText,
     undo,
     redo,
@@ -214,7 +215,11 @@ export function App() {
 
         <section className="timeline-pane" aria-label="Timeline">
           <div className="timeline-toolbar">
-            <button title="Cut">
+            <button
+              disabled={!selectedLayer}
+              onClick={() => selectedLayer && splitLayer(selectedLayer.id, preview.currentTime)}
+              title="Cut"
+            >
               <Scissors size={18} />
             </button>
             <span>{preview.currentTime.toFixed(2)}s</span>
