@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { Asset, ProjectState, TimelineLayer, TtsState } from "../types";
+import { layerTransform } from "../types";
+import type { Asset, LayerTransform, ProjectState, TimelineLayer, TtsState } from "../types";
 
 interface ProjectSnapshot {
   project: ProjectState;
@@ -22,6 +23,7 @@ interface ProjectStore {
   splitLayer: (id: string, time: number) => void;
   duplicateLayer: (id: string) => void;
   deleteLayer: (id: string) => void;
+  updateLayerTransform: (id: string, transform: Partial<LayerTransform>) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
   undo: () => void;
@@ -60,6 +62,7 @@ export const initialProject: ProjectState = {
       start: 0,
       duration: 4,
       zIndex: 10,
+      transform: layerTransform({ x: 140, y: 120, width: 800, height: 120 }),
     },
     {
       id: "intro-image",
@@ -69,6 +72,7 @@ export const initialProject: ProjectState = {
       start: 0.5,
       duration: 7,
       zIndex: 2,
+      transform: layerTransform({ x: 120, y: 300, width: 840, height: 480 }),
     },
     {
       id: "subtitle-main",
@@ -78,6 +82,7 @@ export const initialProject: ProjectState = {
       start: 0,
       duration: 9,
       zIndex: 12,
+      transform: layerTransform({ x: 120, y: 1600, width: 840, height: 120 }),
     },
     {
       id: "voice-main",
@@ -87,6 +92,7 @@ export const initialProject: ProjectState = {
       start: 0,
       duration: 12,
       zIndex: 0,
+      transform: layerTransform({ x: 120, y: 1760, width: 840, height: 80 }),
     },
   ],
 };
@@ -220,6 +226,26 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         selectedLayerId: nextSelection,
       };
     }),
+  updateLayerTransform: (id, transform) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            return {
+              ...layer,
+              transform: {
+                ...layerTransform(layer.transform),
+                ...transform,
+              },
+            };
+          }),
+        },
+      })),
+    ),
   addAsset: (asset) =>
     set((state) => ({
       ...withHistory(state, () => ({
