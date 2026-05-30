@@ -198,4 +198,31 @@ describe("projectStore", () => {
     expect(layer?.transition.kind).toBe("wipe");
     expect(layer?.transition.duration).toBe(1.2);
   });
+
+  it("layer effect を更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerEffect("intro-image", {
+      kind: "blur",
+      amount: 2.5,
+      duration: 1.2,
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.effects[0]).toMatchObject({
+      kind: "blur",
+      amount: 2.5,
+      duration: 1.2,
+    });
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.effects).toEqual([]);
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.effects[0]?.kind).toBe("blur");
+
+    useProjectStore.getState().updateLayerEffect("intro-image", { kind: "none" });
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.effects).toEqual([]);
+  });
 });
