@@ -105,6 +105,8 @@ struct PluginInstallArgs {
 #[derive(Debug, Args)]
 struct PluginRefArgs {
     name: String,
+    #[arg(long, default_value = "mm.toml")]
+    project: PathBuf,
 }
 
 pub fn run() -> Result<()> {
@@ -341,10 +343,18 @@ fn plugin(command: PluginCommand, _messages: Messages) -> Result<()> {
                 project_manager.install_configured_plugins(global_config, args.project)?;
             }
         }
-        PluginCommand::Update(args) => manager.update(PluginReference::named(args.name))?,
-        PluginCommand::Remove(args) => manager.remove(PluginReference::named(args.name))?,
+        PluginCommand::Update(args) => {
+            project_plugin_manager(&args.project).update(PluginReference::named(args.name))?
+        }
+        PluginCommand::Remove(args) => {
+            project_plugin_manager(&args.project).remove(PluginReference::named(args.name))?
+        }
     }
     Ok(())
+}
+
+fn project_plugin_manager(project: &Path) -> PluginManager {
+    PluginManager::new(default_plugin_dir(), project_root(project).join("mm.lock"))
 }
 
 #[derive(Clone, Copy)]
@@ -604,7 +614,8 @@ const PLUGIN_UPDATE_HELP_JA: &str = r#"plugin を更新する
   <NAME>  plugin 名
 
 オプション:
-  -h, --help  ヘルプを表示する
+      --project <PROJECT>  project toml のパス [既定値: mm.toml]
+  -h, --help               ヘルプを表示する
 "#;
 
 const PLUGIN_UPDATE_HELP_EN: &str = r#"Update a plugin
@@ -615,7 +626,8 @@ Arguments:
   <NAME>  Plugin name
 
 Options:
-  -h, --help  Print help
+      --project <PROJECT>  Path to project toml [default: mm.toml]
+  -h, --help               Print help
 "#;
 
 const PLUGIN_REMOVE_HELP_JA: &str = r#"plugin を削除する
@@ -626,7 +638,8 @@ const PLUGIN_REMOVE_HELP_JA: &str = r#"plugin を削除する
   <NAME>  plugin 名
 
 オプション:
-  -h, --help  ヘルプを表示する
+      --project <PROJECT>  project toml のパス [既定値: mm.toml]
+  -h, --help               ヘルプを表示する
 "#;
 
 const PLUGIN_REMOVE_HELP_EN: &str = r#"Remove a plugin
@@ -637,7 +650,8 @@ Arguments:
   <NAME>  Plugin name
 
 Options:
-  -h, --help  Print help
+      --project <PROJECT>  Path to project toml [default: mm.toml]
+  -h, --help               Print help
 "#;
 
 fn project_root(project_path: &Path) -> PathBuf {
@@ -726,6 +740,18 @@ mod tests {
 
         assert!(help.contains("使用方法: mm plugin install"));
         assert!(help.contains("--manifest"));
+
+        let help = localized_help(&[
+            "mm".into(),
+            "--lang".into(),
+            "en".into(),
+            "plugin".into(),
+            "update".into(),
+            "--help".into(),
+        ])
+        .unwrap();
+        assert!(help.contains("Usage: mm plugin update"));
+        assert!(help.contains("--project"));
     }
 
     #[test]
@@ -760,6 +786,28 @@ mod tests {
                 command: PluginCommand::Install(args),
             } => assert_eq!(args.manifest, Some(PathBuf::from("plugin.toml"))),
             _ => panic!("plugin install command として parse されていません"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_plugin_update_project() {
+        let cli = Cli::try_parse_from([
+            "mm",
+            "plugin",
+            "update",
+            "theme",
+            "--project",
+            "examples/basic/mm.toml",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Plugin {
+                command: PluginCommand::Update(args),
+            } => {
+                assert_eq!(args.name, "theme");
+                assert_eq!(args.project, PathBuf::from("examples/basic/mm.toml"));
+            }
+            _ => panic!("plugin update command として parse されていません"),
         }
     }
 
