@@ -225,4 +225,34 @@ describe("projectStore", () => {
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.effects).toEqual([]);
   });
+
+  it("layer animation keyframe を更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerAnimation("intro-image", {
+      property: "opacity",
+      easing: "ease_in_out",
+      keyframes: [
+        { time: 0, value: 0 },
+        { time: 1.5, value: 1 },
+      ],
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.animations[0]).toMatchObject({
+      property: "opacity",
+      easing: "ease_in_out",
+    });
+    expect(layer?.animations[0]?.keyframes[1]).toEqual({ time: 1.5, value: 1 });
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.animations).toEqual([]);
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.animations[0]?.property).toBe("opacity");
+
+    useProjectStore.getState().updateLayerAnimation("intro-image", { property: "none" });
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.animations).toEqual([]);
+  });
 });

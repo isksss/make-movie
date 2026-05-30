@@ -19,7 +19,7 @@ import { useState } from "react";
 import { commands } from "../services/tauri";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
-import { cropRect, layerEffect, layerTransform, layerTransition } from "../types";
+import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
 import type { ProjectState } from "../types";
 import { PreviewCanvas } from "./PreviewCanvas";
 
@@ -43,6 +43,7 @@ export function App() {
     updateLayerVisual,
     updateLayerTransition,
     updateLayerEffect,
+    updateLayerAnimation,
     updateTtsText,
     undo,
     redo,
@@ -57,6 +58,7 @@ export function App() {
   const selectedCrop = selectedLayer ? cropRect(selectedLayer.crop) : null;
   const selectedTransition = selectedLayer ? layerTransition(selectedLayer.transition) : null;
   const selectedEffect = selectedLayer ? layerEffect(selectedLayer.effects[0]) : null;
+  const selectedAnimation = selectedLayer ? layerAnimation(selectedLayer.animations[0]) : null;
   const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
     try {
       await action();
@@ -514,6 +516,129 @@ export function App() {
                           step={1}
                           type="number"
                           value={selectedEffect.y}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  {selectedAnimation ? (
+                    <>
+                      <label>
+                        Keyframe Property
+                        <select
+                          onChange={(event) =>
+                            updateLayerAnimation(selectedLayer.id, {
+                              property: event.target
+                                .value as ProjectState["layers"][number]["animations"][number]["property"],
+                            })
+                          }
+                          value={selectedAnimation.property}
+                        >
+                          <option value="none">none</option>
+                          <option value="x">x</option>
+                          <option value="y">y</option>
+                          <option value="scale">scale</option>
+                          <option value="rotation">rotation</option>
+                          <option value="opacity">opacity</option>
+                          <option value="width">width</option>
+                          <option value="height">height</option>
+                        </select>
+                      </label>
+                      <label>
+                        Easing
+                        <select
+                          onChange={(event) =>
+                            updateLayerAnimation(selectedLayer.id, {
+                              easing: event.target
+                                .value as ProjectState["layers"][number]["animations"][number]["easing"],
+                            })
+                          }
+                          value={selectedAnimation.easing}
+                        >
+                          <option value="linear">linear</option>
+                          <option value="ease_in">ease_in</option>
+                          <option value="ease_out">ease_out</option>
+                          <option value="ease_in_out">ease_in_out</option>
+                          <option value="ease_out_back">ease_out_back</option>
+                          <option value="bounce">bounce</option>
+                          <option value="elastic">elastic</option>
+                        </select>
+                      </label>
+                      <label>
+                        Keyframe 1 Time
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerAnimation(selectedLayer.id, {
+                              keyframes: [
+                                {
+                                  ...selectedAnimation.keyframes[0],
+                                  time: Number(event.target.value),
+                                },
+                                selectedAnimation.keyframes[1],
+                              ],
+                            })
+                          }
+                          step={0.1}
+                          type="number"
+                          value={selectedAnimation.keyframes[0].time}
+                        />
+                      </label>
+                      <label>
+                        Keyframe 1 Value
+                        <input
+                          onChange={(event) =>
+                            updateLayerAnimation(selectedLayer.id, {
+                              keyframes: [
+                                {
+                                  ...selectedAnimation.keyframes[0],
+                                  value: Number(event.target.value),
+                                },
+                                selectedAnimation.keyframes[1],
+                              ],
+                            })
+                          }
+                          step={0.1}
+                          type="number"
+                          value={selectedAnimation.keyframes[0].value}
+                        />
+                      </label>
+                      <label>
+                        Keyframe 2 Time
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerAnimation(selectedLayer.id, {
+                              keyframes: [
+                                selectedAnimation.keyframes[0],
+                                {
+                                  ...selectedAnimation.keyframes[1],
+                                  time: Number(event.target.value),
+                                },
+                              ],
+                            })
+                          }
+                          step={0.1}
+                          type="number"
+                          value={selectedAnimation.keyframes[1].time}
+                        />
+                      </label>
+                      <label>
+                        Keyframe 2 Value
+                        <input
+                          onChange={(event) =>
+                            updateLayerAnimation(selectedLayer.id, {
+                              keyframes: [
+                                selectedAnimation.keyframes[0],
+                                {
+                                  ...selectedAnimation.keyframes[1],
+                                  value: Number(event.target.value),
+                                },
+                              ],
+                            })
+                          }
+                          step={0.1}
+                          type="number"
+                          value={selectedAnimation.keyframes[1].value}
                         />
                       </label>
                     </>
