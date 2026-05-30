@@ -177,4 +177,25 @@ describe("projectStore", () => {
     expect(layer?.mask).toBe("rounded_rect");
     expect(layer?.fit).toBe("blur_background");
   });
+
+  it("layer transition を更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerTransition("intro-image", {
+      kind: "wipe",
+      duration: 1.2,
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.transition.kind).toBe("wipe");
+    expect(layer?.transition.duration).toBe(1.2);
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.transition.kind).toBe("none");
+    expect(layer?.transition.duration).toBe(0.5);
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.transition.kind).toBe("wipe");
+    expect(layer?.transition.duration).toBe(1.2);
+  });
 });

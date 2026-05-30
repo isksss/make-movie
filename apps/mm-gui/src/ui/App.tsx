@@ -19,7 +19,7 @@ import { useState } from "react";
 import { commands } from "../services/tauri";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
-import { cropRect, layerTransform } from "../types";
+import { cropRect, layerTransform, layerTransition } from "../types";
 import type { ProjectState } from "../types";
 import { PreviewCanvas } from "./PreviewCanvas";
 
@@ -41,6 +41,7 @@ export function App() {
     deleteLayer,
     updateLayerTransform,
     updateLayerVisual,
+    updateLayerTransition,
     updateTtsText,
     undo,
     redo,
@@ -53,6 +54,7 @@ export function App() {
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
   const selectedCrop = selectedLayer ? cropRect(selectedLayer.crop) : null;
+  const selectedTransition = selectedLayer ? layerTransition(selectedLayer.transition) : null;
   const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
     try {
       await action();
@@ -395,6 +397,44 @@ export function App() {
                       <option value="blur_background">blur_background</option>
                     </select>
                   </label>
+                  {selectedTransition ? (
+                    <>
+                      <label>
+                        Transition
+                        <select
+                          onChange={(event) =>
+                            updateLayerTransition(selectedLayer.id, {
+                              kind: event.target
+                                .value as ProjectState["layers"][number]["transition"]["kind"],
+                            })
+                          }
+                          value={selectedTransition.kind}
+                        >
+                          <option value="none">none</option>
+                          <option value="crossfade">crossfade</option>
+                          <option value="wipe">wipe</option>
+                          <option value="push">push</option>
+                          <option value="zoom">zoom</option>
+                          <option value="blur">blur</option>
+                          <option value="flash">flash</option>
+                        </select>
+                      </label>
+                      <label>
+                        Transition Duration
+                        <input
+                          min={0}
+                          onChange={(event) =>
+                            updateLayerTransition(selectedLayer.id, {
+                              duration: Number(event.target.value),
+                            })
+                          }
+                          step={0.1}
+                          type="number"
+                          value={selectedTransition.duration}
+                        />
+                      </label>
+                    </>
+                  ) : null}
                 </>
               ) : null}
             </div>

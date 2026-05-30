@@ -173,3 +173,32 @@ test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page 
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.getByLabel("Fit")).toHaveValue("blur_background");
 });
+
+test("PropertyからTransitionを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  const transition = page.getByRole("combobox", { name: "Transition", exact: true });
+  const transitionDuration = page.getByRole("spinbutton", {
+    name: "Transition Duration",
+    exact: true,
+  });
+  await expect(transition).toHaveValue("none");
+
+  await transition.selectOption("wipe");
+  await transitionDuration.fill("1.2");
+  await expect(transition).toHaveValue("wipe");
+  await expect(transitionDuration).toHaveValue("1.2");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(transitionDuration).toHaveValue("0.5");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(transition).toHaveValue("none");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(transition).toHaveValue("wipe");
+});
