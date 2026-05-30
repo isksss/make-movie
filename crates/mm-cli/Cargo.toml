@@ -15,3 +15,7 @@ clap.workspace = true
 mm-core = { path = "../mm-core" }
 mm-plugin-runtime = { path = "../mm-plugin-runtime" }
 mm-render = { path = "../mm-render" }
+
+[dev-dependencies]
+assert_cmd = "2"
+tempfile.workspace = true
