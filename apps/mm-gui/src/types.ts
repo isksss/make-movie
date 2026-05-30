@@ -112,11 +112,19 @@ export interface Track {
   kind: "video" | "audio";
 }
 
+export interface Scene {
+  id: string;
+  name: string;
+  start: number;
+  duration: number;
+}
+
 export interface ProjectState {
   settings: ProjectSettings;
   assets: Asset[];
   tracks: Track[];
   layers: TimelineLayer[];
+  scenes: Scene[];
 }
 
 export interface PreviewState {
