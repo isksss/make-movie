@@ -31,6 +31,7 @@ export type EasingKind =
   | "ease_out_back"
   | "bounce"
   | "elastic";
+export type TextAlignKind = "left" | "center" | "right";
 
 export interface ProjectSettings {
   title: string;
@@ -73,9 +74,33 @@ export interface TimelineLayer {
   crop: CropRect;
   mask: MaskKind;
   fit: FitMode;
+  text: TextLayerStyle;
   transition: LayerTransition;
   effects: LayerEffect[];
   animations: LayerAnimation[];
+}
+
+export interface TextLayerStyle {
+  text: string;
+  fontSize: number;
+  color: string;
+  letterSpacing: number;
+  lineSpacing: number;
+  align: TextAlignKind;
+  stroke: TextStrokeStyle;
+  shadow: TextShadowStyle;
+}
+
+export interface TextStrokeStyle {
+  color: string;
+  width: number;
+}
+
+export interface TextShadowStyle {
+  color: string;
+  offsetX: number;
+  offsetY: number;
+  blur: number;
 }
 
 export interface LayerTransform {
@@ -206,6 +231,20 @@ export function layerAnimation(overrides: Partial<LayerAnimation> = {}): LayerAn
       { time: 0, value: 0 },
       { time: 1, value: 1 },
     ],
+    ...overrides,
+  };
+}
+
+export function textLayerStyle(overrides: Partial<TextLayerStyle> = {}): TextLayerStyle {
+  return {
+    text: "",
+    fontSize: 48,
+    color: "#ffffff",
+    letterSpacing: 0,
+    lineSpacing: 1.2,
+    align: "center",
+    stroke: { color: "#000000", width: 0 },
+    shadow: { color: "#000000", offsetX: 0, offsetY: 0, blur: 0 },
     ...overrides,
   };
 }

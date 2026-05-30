@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
+import {
+  cropRect,
+  layerAnimation,
+  layerEffect,
+  layerTransform,
+  layerTransition,
+  textLayerStyle,
+} from "../types";
 import type {
   Asset,
   CropRect,
@@ -10,6 +17,7 @@ import type {
   LayerTransform,
   MaskKind,
   ProjectState,
+  TextLayerStyle,
   TimelineLayer,
   TtsState,
 } from "../types";
@@ -44,6 +52,7 @@ interface ProjectStore {
     id: string,
     visual: Partial<{ crop: Partial<CropRect>; mask: MaskKind; fit: FitMode }>,
   ) => void;
+  updateLayerText: (id: string, text: Partial<TextLayerStyle>) => void;
   updateLayerTransition: (id: string, transition: Partial<LayerTransition>) => void;
   updateLayerEffect: (id: string, effect: Partial<LayerEffect>) => void;
   updateLayerAnimation: (id: string, animation: Partial<LayerAnimation>) => void;
@@ -93,6 +102,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "none",
+      text: textLayerStyle({ text: "Title Text", fontSize: 64 }),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -111,6 +121,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "contain",
+      text: textLayerStyle(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -129,6 +140,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "none",
+      text: textLayerStyle(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -147,6 +159,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "none",
+      text: textLayerStyle(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -165,6 +178,7 @@ export const initialProject: ProjectState = {
       crop: cropRect(),
       mask: "none",
       fit: "none",
+      text: textLayerStyle(),
       transition: layerTransition(),
       effects: [],
       animations: [],
@@ -351,6 +365,35 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                 : layer.crop,
               mask: visual.mask ?? layer.mask,
               fit: visual.fit ?? layer.fit,
+            };
+          }),
+        },
+      })),
+    ),
+  updateLayerText: (id, text) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            return {
+              ...layer,
+              label: text.text ?? layer.label,
+              text: {
+                ...layer.text,
+                ...text,
+                stroke: {
+                  ...layer.text.stroke,
+                  ...text.stroke,
+                },
+                shadow: {
+                  ...layer.text.shadow,
+                  ...text.shadow,
+                },
+              },
             };
           }),
         },

@@ -95,6 +95,30 @@ test("プロパティ編集をUndo/Redoできる", async ({ page }) => {
   await expect(page.getByLabel("Start")).toHaveValue("1.2");
 });
 
+test("Textレイヤーのスタイルを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+  await useEnglish(page);
+
+  const property = page.getByRole("region", { name: "Property" }).locator(".property-grid");
+  await property.locator("textarea").first().fill("Updated title");
+  await property.getByLabel("Font Size").fill("72");
+  await property.getByLabel("Text Color").fill("#ffcc00");
+  await property.getByLabel("Text Align").selectOption("left");
+  await property.getByLabel("Stroke Width").fill("3");
+  await property.getByLabel("Shadow X").fill("4");
+  await property.getByLabel("Shadow Blur").fill("6");
+
+  await expect(property.getByLabel("Layer")).toHaveValue("Updated title");
+  await expect(property.getByLabel("Font Size")).toHaveValue("72");
+  await expect(property.getByLabel("Text Align")).toHaveValue("left");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(property.getByLabel("Shadow Blur")).toHaveValue("0");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(property.getByLabel("Shadow Blur")).toHaveValue("6");
+});
+
 test("選択中クリップを現在時刻でCutできる", async ({ page }) => {
   await page.goto("/");
   await useEnglish(page);
@@ -349,11 +373,12 @@ test("TTS編集でSpeaker/Text/Speed/Pitch/Emotionを編集しUndo/Redoできる
   await page.goto("/");
   await useEnglish(page);
 
-  const speaker = page.getByLabel("Speaker");
-  const text = page.getByLabel("Text");
-  const speed = page.getByRole("spinbutton", { name: "Speed", exact: true });
-  const pitch = page.getByRole("spinbutton", { name: "Pitch", exact: true });
-  const emotion = page.getByRole("textbox", { name: "Emotion", exact: true });
+  const ttsEditor = page.locator(".tts-editor");
+  const speaker = ttsEditor.getByLabel("Speaker");
+  const text = ttsEditor.locator("textarea");
+  const speed = ttsEditor.getByRole("spinbutton", { name: "Speed", exact: true });
+  const pitch = ttsEditor.getByRole("spinbutton", { name: "Pitch", exact: true });
+  const emotion = ttsEditor.getByRole("textbox", { name: "Emotion", exact: true });
 
   await speaker.fill("四国めたん");
   await text.fill("更新後の文章");

@@ -89,6 +89,36 @@ describe("projectStore", () => {
     });
   });
 
+  it("Text layer styleを更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerText("title", {
+      text: "更新後タイトル",
+      fontSize: 72,
+      color: "#ffcc00",
+      align: "left",
+      stroke: { color: "#111111", width: 3 },
+      shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "title");
+    expect(layer?.label).toBe("更新後タイトル");
+    expect(layer?.text).toMatchObject({
+      text: "更新後タイトル",
+      fontSize: 72,
+      color: "#ffcc00",
+      align: "left",
+      stroke: { color: "#111111", width: 3 },
+      shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+    });
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "title");
+    expect(layer?.text.text).toBe("Title Text");
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "title");
+    expect(layer?.text.fontSize).toBe(72);
+  });
+
   it("layer を指定時刻でCutしUndo/Redoできる", () => {
     useProjectStore.getState().splitLayer("intro-image", 2.5);
 
