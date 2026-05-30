@@ -1,0 +1,22 @@
+[package]
+name = "mm-gui"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lib]
+name = "mm_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+mm-core = { path = "../../../crates/mm-core" }
+mm-plugin-runtime = { path = "../../../crates/mm-plugin-runtime" }
+mm-render = { path = "../../../crates/mm-render" }
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+toml = "0.8"
