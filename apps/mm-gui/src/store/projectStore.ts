@@ -20,6 +20,8 @@ interface ProjectStore {
   selectAsset: (id: string) => void;
   moveLayer: (id: string, start: number) => void;
   splitLayer: (id: string, time: number) => void;
+  duplicateLayer: (id: string) => void;
+  deleteLayer: (id: string) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
   undo: () => void;
@@ -173,6 +175,49 @@ export const useProjectStore = create<ProjectStore>((set) => ({
           project: { ...state.project, layers },
         })),
         selectedLayerId: nextId,
+      };
+    }),
+  duplicateLayer: (id) =>
+    set((state) => {
+      const layerIndex = state.project.layers.findIndex((layer) => layer.id === id);
+      if (layerIndex < 0) {
+        return {};
+      }
+      const layer = state.project.layers[layerIndex];
+      const nextId = uniqueLayerId(state.project.layers, `${layer.id}-copy`);
+      const nextLabel = uniqueLayerLabel(state.project.layers, `${layer.label} Copy`);
+      const nextStart =
+        layer.start + layer.duration <= state.project.settings.duration
+          ? layer.start + layer.duration
+          : layer.start;
+      const duplicate: TimelineLayer = {
+        ...layer,
+        id: nextId,
+        label: nextLabel,
+        start: nextStart,
+      };
+      const layers = [...state.project.layers];
+      layers.splice(layerIndex + 1, 0, duplicate);
+      return {
+        ...withHistory(state, () => ({
+          project: { ...state.project, layers },
+        })),
+        selectedLayerId: nextId,
+      };
+    }),
+  deleteLayer: (id) =>
+    set((state) => {
+      const layerIndex = state.project.layers.findIndex((layer) => layer.id === id);
+      if (layerIndex < 0) {
+        return {};
+      }
+      const layers = state.project.layers.filter((layer) => layer.id !== id);
+      const nextSelection = layers[layerIndex]?.id ?? layers[layerIndex - 1]?.id ?? null;
+      return {
+        ...withHistory(state, () => ({
+          project: { ...state.project, layers },
+        })),
+        selectedLayerId: nextSelection,
       };
     }),
   addAsset: (asset) =>

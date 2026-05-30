@@ -1,5 +1,6 @@
 import {
   Box,
+  Copy,
   FolderOpen,
   Import,
   Pause,
@@ -9,6 +10,7 @@ import {
   Settings,
   SkipBack,
   SkipForward,
+  Trash2,
   Redo2,
   Undo2,
   Wand2,
@@ -34,6 +36,8 @@ export function App() {
     selectLayer,
     moveLayer,
     splitLayer,
+    duplicateLayer,
+    deleteLayer,
     updateTtsText,
     undo,
     redo,
@@ -221,6 +225,20 @@ export function App() {
               title="Cut"
             >
               <Scissors size={18} />
+            </button>
+            <button
+              disabled={!selectedLayer}
+              onClick={() => selectedLayer && duplicateLayer(selectedLayer.id)}
+              title="Duplicate"
+            >
+              <Copy size={18} />
+            </button>
+            <button
+              disabled={!selectedLayer}
+              onClick={() => selectedLayer && deleteLayer(selectedLayer.id)}
+              title="Delete"
+            >
+              <Trash2 size={18} />
             </button>
             <span>{preview.currentTime.toFixed(2)}s</span>
           </div>
