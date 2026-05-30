@@ -1,7 +1,7 @@
 namespace Mm.Sdk;
 
 /// <summary>
-/// Minimal lifecycle contract defined by plugin-api/plugin.wit.
+/// Minimal lifecycle contract generated from plugin-api/plugin.wit.
 /// </summary>
 public interface IMmPlugin
 {

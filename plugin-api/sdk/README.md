@@ -1,6 +1,6 @@
 # make-movie Plugin SDK
 
-このディレクトリは `plugin-api/plugin.wit` を正本として利用する最小 SDK 雛形を管理します。
+このディレクトリは `plugin-api/plugin.wit` を正本として生成する最小 SDK 雛形を管理します。
 
 ## 契約
 
@@ -19,10 +19,18 @@
 - `ts/`: `mm-sdk-ts`
 - `csharp/`: `mm-sdk-csharp`
 
+## 生成
+
+```bash
+bash plugin-api/sdk/generate.sh
+```
+
+生成元は `plugin-api/plugin.wit` です。`plugin.wit` を変更した場合は必ず SDK を再生成します。
+
 ## 検証
 
 ```bash
 bash plugin-api/sdk/verify.sh
 ```
 
-この検証は `plugin.wit` の必須 export と、各 SDK の最小ファイルが揃っていることを確認します。
+この検証は `plugin.wit` の必須 export、各 SDK の最小ファイル、生成物の drift を確認します。

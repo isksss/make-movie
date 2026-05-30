@@ -1,5 +1,7 @@
 package mmsdk
 
+// Generated from plugin-api/plugin.wit.
+
 // Plugin mirrors the lifecycle defined in plugin-api/plugin.wit.
 type Plugin interface {
 	Metadata() string
