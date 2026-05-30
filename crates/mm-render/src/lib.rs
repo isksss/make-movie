@@ -2,8 +2,8 @@ use ab_glyph::{point, Font, FontArc, GlyphId, PxScale, ScaleFont};
 use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
-    AssetKind, AudioLayer, Layer, LayerContent, Project, SubtitleLayer, TextAlign, TextLayer,
-    TextShadow, TextStroke, Transform, VideoLayer,
+    AnimatedProperty, Animation, AssetKind, AudioLayer, Easing, Effect, Layer, LayerContent,
+    Project, SubtitleLayer, TextAlign, TextLayer, TextShadow, TextStroke, Transform, VideoLayer,
 };
 use std::env;
 use std::fs;
@@ -533,7 +533,9 @@ fn render_frame_on_base(
     layers.sort_by_key(|layer| layer.z_index);
 
     for layer in layers {
-        draw_layer(project, options, &mut frame, layer, time)?;
+        let local_time = time - layer.start;
+        let transform = resolve_layer_transform(layer, local_time);
+        draw_layer(project, options, &mut frame, layer, transform, time)?;
     }
     Ok(frame)
 }
@@ -691,6 +693,7 @@ fn draw_layer(
     options: &RenderOptions,
     frame: &mut RgbaImage,
     layer: &Layer,
+    transform: Transform,
     time: f64,
 ) -> Result<()> {
     match &layer.content {
@@ -704,11 +707,12 @@ fn draw_layer(
             let image = image::open(&path)
                 .with_context(|| format!("画像を読み込めません: {}", path.display()))?
                 .to_rgba8();
-            draw_image(frame, &image, layer.transform);
+            let image = apply_image_effects(image, &layer.effects);
+            draw_image(frame, &image, transform);
         }
         LayerContent::Text(content) => {
             let font = load_font(project, options, content.font_asset_id.as_deref())?;
-            draw_text_layer(frame, content, layer.transform, &font);
+            draw_text_layer(frame, content, transform, &font);
         }
         LayerContent::Subtitle(content) => {
             if let Some(text) = active_subtitle_text(project, options, content, time - layer.start)?
@@ -736,7 +740,7 @@ fn draw_layer(
                 draw_text_layer(
                     frame,
                     &subtitle,
-                    subtitle_transform(frame, layer.transform),
+                    subtitle_transform(frame, transform),
                     &font,
                 );
             }
@@ -744,6 +748,178 @@ fn draw_layer(
         LayerContent::Video(_) | LayerContent::Audio(_) | LayerContent::Voice(_) => {}
     }
     Ok(())
+}
+
+fn resolve_layer_transform(layer: &Layer, local_time: f64) -> Transform {
+    let mut transform = layer.transform;
+    for animation in &layer.animations {
+        if let Some(value) = resolve_animation_value(animation, local_time) {
+            match animation.property {
+                AnimatedProperty::X => transform.x = value,
+                AnimatedProperty::Y => transform.y = value,
+                AnimatedProperty::Scale => transform.scale = value,
+                AnimatedProperty::Rotation => transform.rotation = value,
+                AnimatedProperty::Opacity => transform.opacity = value,
+                AnimatedProperty::Width => transform.width = value,
+                AnimatedProperty::Height => transform.height = value,
+                AnimatedProperty::CropX
+                | AnimatedProperty::CropY
+                | AnimatedProperty::CropWidth
+                | AnimatedProperty::CropHeight => {}
+            }
+        }
+    }
+    apply_transform_effects(layer, local_time, transform)
+}
+
+fn resolve_animation_value(animation: &Animation, local_time: f64) -> Option<f32> {
+    let first = animation.keyframes.first()?;
+    if local_time <= first.time {
+        return Some(first.value);
+    }
+    for pair in animation.keyframes.windows(2) {
+        let start = pair[0];
+        let end = pair[1];
+        if start.time <= local_time && local_time <= end.time {
+            let span = (end.time - start.time).max(f64::EPSILON);
+            let progress = ((local_time - start.time) / span).clamp(0.0, 1.0) as f32;
+            let eased = apply_easing(animation.easing, progress);
+            return Some(start.value + (end.value - start.value) * eased);
+        }
+    }
+    animation.keyframes.last().map(|keyframe| keyframe.value)
+}
+
+fn apply_easing(easing: Easing, progress: f32) -> f32 {
+    let t = progress.clamp(0.0, 1.0);
+    match easing {
+        Easing::Linear => t,
+        Easing::EaseIn => t * t,
+        Easing::EaseOut => 1.0 - (1.0 - t) * (1.0 - t),
+        Easing::EaseInOut => {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
+            }
+        }
+        Easing::EaseOutBack => {
+            let c1 = 1.70158;
+            let c3 = c1 + 1.0;
+            1.0 + c3 * (t - 1.0).powi(3) + c1 * (t - 1.0).powi(2)
+        }
+        Easing::Bounce => ease_out_bounce(t),
+        Easing::Elastic => {
+            if t == 0.0 || t == 1.0 {
+                t
+            } else {
+                let c4 = (2.0 * std::f32::consts::PI) / 3.0;
+                2.0_f32.powf(-10.0 * t) * ((t * 10.0 - 0.75) * c4).sin() + 1.0
+            }
+        }
+    }
+}
+
+fn ease_out_bounce(t: f32) -> f32 {
+    let n1 = 7.5625;
+    let d1 = 2.75;
+    if t < 1.0 / d1 {
+        n1 * t * t
+    } else if t < 2.0 / d1 {
+        let shifted = t - 1.5 / d1;
+        n1 * shifted * shifted + 0.75
+    } else if t < 2.5 / d1 {
+        let shifted = t - 2.25 / d1;
+        n1 * shifted * shifted + 0.9375
+    } else {
+        let shifted = t - 2.625 / d1;
+        n1 * shifted * shifted + 0.984375
+    }
+}
+
+fn apply_transform_effects(layer: &Layer, local_time: f64, mut transform: Transform) -> Transform {
+    for effect in &layer.effects {
+        match *effect {
+            Effect::FadeIn { duration } if duration > 0.0 => {
+                let amount = (local_time / duration).clamp(0.0, 1.0) as f32;
+                transform.opacity *= amount;
+            }
+            Effect::FadeOut { duration } if duration > 0.0 => {
+                let remaining = (layer.duration - local_time).max(0.0);
+                let amount = (remaining / duration).clamp(0.0, 1.0) as f32;
+                transform.opacity *= amount;
+            }
+            Effect::Zoom { amount } => {
+                transform.scale *= amount.max(0.01);
+            }
+            Effect::Slide { x, y } => {
+                transform.x += x;
+                transform.y += y;
+            }
+            Effect::FadeIn { .. }
+            | Effect::FadeOut { .. }
+            | Effect::Blur { .. }
+            | Effect::Brightness { .. }
+            | Effect::Contrast { .. }
+            | Effect::Saturation { .. }
+            | Effect::Pixelate { .. }
+            | Effect::MotionBlur { .. } => {}
+        }
+    }
+    transform.opacity = transform.opacity.clamp(0.0, 1.0);
+    transform
+}
+
+fn apply_image_effects(mut image: RgbaImage, effects: &[Effect]) -> RgbaImage {
+    for effect in effects {
+        image = match *effect {
+            Effect::Blur { radius } if radius > 0.0 => imageops::blur(&image, radius),
+            Effect::Brightness { amount } => imageops::brighten(&image, (amount * 255.0) as i32),
+            Effect::Contrast { amount } => imageops::contrast(&image, amount),
+            Effect::Saturation { amount } => adjust_saturation(&image, amount),
+            Effect::Pixelate { size } if size > 1 => pixelate(&image, size),
+            Effect::FadeIn { .. }
+            | Effect::FadeOut { .. }
+            | Effect::Blur { .. }
+            | Effect::Zoom { .. }
+            | Effect::Slide { .. }
+            | Effect::Pixelate { .. }
+            | Effect::MotionBlur { .. } => image,
+        };
+    }
+    image
+}
+
+fn adjust_saturation(image: &RgbaImage, amount: f32) -> RgbaImage {
+    let saturation = amount.max(0.0);
+    let mut adjusted = image.clone();
+    for pixel in adjusted.pixels_mut() {
+        let r = f32::from(pixel[0]);
+        let g = f32::from(pixel[1]);
+        let b = f32::from(pixel[2]);
+        let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        pixel[0] = (luma + (r - luma) * saturation).round().clamp(0.0, 255.0) as u8;
+        pixel[1] = (luma + (g - luma) * saturation).round().clamp(0.0, 255.0) as u8;
+        pixel[2] = (luma + (b - luma) * saturation).round().clamp(0.0, 255.0) as u8;
+    }
+    adjusted
+}
+
+fn pixelate(image: &RgbaImage, size: u32) -> RgbaImage {
+    let small_width = (image.width() / size).max(1);
+    let small_height = (image.height() / size).max(1);
+    let small = imageops::resize(
+        image,
+        small_width,
+        small_height,
+        imageops::FilterType::Nearest,
+    );
+    imageops::resize(
+        &small,
+        image.width(),
+        image.height(),
+        imageops::FilterType::Nearest,
+    )
 }
 
 fn draw_image(frame: &mut RgbaImage, image: &RgbaImage, transform: Transform) {
@@ -1130,8 +1306,9 @@ fn alpha_blend(frame: &mut RgbaImage, overlay: &RgbaImage, x: i32, y: i32, opaci
 mod tests {
     use super::*;
     use mm_core::{
-        Asset, AssetKind, AssetMode, AudioLayer, ProjectSettings, SubtitleLayer, TextLayer, Track,
-        TrackKind, VideoLayer,
+        AnimatedProperty, Animation, Asset, AssetKind, AssetMode, AudioLayer, Easing, Effect,
+        ImageLayer, Keyframe, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
+        VideoLayer,
     };
 
     fn text_project() -> Project {
@@ -1237,6 +1414,105 @@ mod tests {
             align_to(GPU_COPY_ALIGNMENT + 1, GPU_COPY_ALIGNMENT),
             GPU_COPY_ALIGNMENT * 2
         );
+    }
+
+    #[test]
+    fn resolve_layer_transform_applies_keyframes_and_fade() {
+        let mut project = text_project();
+        let layer = &mut project.tracks[0].layers[0];
+        layer.effects.push(Effect::FadeIn { duration: 1.0 });
+        layer.animations.push(Animation {
+            property: AnimatedProperty::X,
+            easing: Easing::Linear,
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 10.0,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: 30.0,
+                },
+            ],
+        });
+        layer.animations.push(Animation {
+            property: AnimatedProperty::Opacity,
+            easing: Easing::EaseIn,
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 0.2,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: 1.0,
+                },
+            ],
+        });
+
+        let transform = resolve_layer_transform(layer, 0.5);
+
+        assert_eq!(transform.x, 20.0);
+        assert!((transform.opacity - 0.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn image_effects_adjust_pixels() {
+        let image = RgbaImage::from_pixel(4, 4, Rgba([100, 50, 25, 255]));
+
+        let adjusted = apply_image_effects(
+            image,
+            &[
+                Effect::Brightness { amount: 0.1 },
+                Effect::Saturation { amount: 0.0 },
+                Effect::Pixelate { size: 2 },
+            ],
+        );
+
+        assert_eq!(adjusted.dimensions(), (4, 4));
+        let pixel = adjusted.get_pixel(0, 0);
+        assert_eq!(pixel[0], pixel[1]);
+        assert_eq!(pixel[1], pixel[2]);
+    }
+
+    #[test]
+    fn render_frame_applies_image_fade_effect() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let image_path = dir.path().join("media/image/pixel.png");
+        std::fs::create_dir_all(image_path.parent().unwrap())?;
+        RgbaImage::from_pixel(8, 8, Rgba([255, 255, 255, 255])).save(&image_path)?;
+        let mut project = text_project();
+        project.assets.push(Asset {
+            id: "pixel".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/pixel.png"),
+        });
+        project.tracks[0].layers[0].content = LayerContent::Image(ImageLayer {
+            asset_id: "pixel".to_string(),
+            crop: None,
+            mask: None,
+            fit: None,
+        });
+        project.tracks[0].layers[0].transform = Transform {
+            x: 0.0,
+            y: 0.0,
+            width: 8.0,
+            height: 8.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        project.tracks[0].layers[0]
+            .effects
+            .push(Effect::FadeIn { duration: 1.0 });
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let early = render_frame(&project, &options, 0.25)?;
+        let late = render_frame(&project, &options, 0.75)?;
+
+        assert!(early.get_pixel(0, 0)[0] < late.get_pixel(0, 0)[0]);
+        Ok(())
     }
 
     #[test]
