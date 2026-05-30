@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { commands } from "../services/tauri";
+import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
@@ -33,6 +34,7 @@ export function App() {
     selectedAssetId,
     selectedLayerId,
     tts,
+    setProject,
     selectAsset,
     selectLayer,
     moveLayer,
@@ -75,7 +77,10 @@ export function App() {
         <div className="toolbar" aria-label="Project toolbar">
           <button
             onClick={() =>
-              runCommand(() => commands.loadProject(defaultProjectPath), "プロジェクトを開きました")
+              runCommand(async () => {
+                const toml = await commands.loadProject(defaultProjectPath);
+                setProject(parseProjectToml(toml, project));
+              }, "プロジェクトを開きました")
             }
             title="Open project"
           >
@@ -84,7 +89,7 @@ export function App() {
           <button
             onClick={() =>
               runCommand(
-                () => commands.saveProject(defaultProjectPath, serializeProjectForSave(project)),
+                () => commands.saveProject(defaultProjectPath, serializeProjectToToml(project)),
                 "プロジェクトを保存しました",
               )
             }
@@ -722,19 +727,4 @@ export function App() {
       </main>
     </div>
   );
-}
-
-function serializeProjectForSave(project: ProjectState) {
-  return [
-    "[settings]",
-    `title = ${JSON.stringify(project.settings.title)}`,
-    `width = ${project.settings.width}`,
-    `height = ${project.settings.height}`,
-    `fps = ${project.settings.fps}`,
-    `sample_rate = ${project.settings.sampleRate}`,
-    `duration = ${project.settings.duration}`,
-    `output = ${JSON.stringify(project.settings.output)}`,
-    'asset_mode = "copy"',
-    "",
-  ].join("\n");
 }

@@ -24,7 +24,48 @@ test.beforeEach(async ({ page }) => {
       invoke: async (cmd: string, args: Record<string, unknown>) => {
         calls.push({ cmd, args });
         if (cmd === "load_project") {
-          return '[settings]\ntitle = "E2E"\nwidth = 1080\nheight = 1920\nfps = 30\nsample_rate = 48000\nduration = 1\noutput = "output/movie.mp4"\nasset_mode = "copy"\n';
+          return [
+            "[settings]",
+            'title = "E2E"',
+            "width = 1080",
+            "height = 1920",
+            "fps = 30",
+            "sample_rate = 48000",
+            "duration = 1",
+            'output = "output/movie.mp4"',
+            'asset_mode = "copy"',
+            "",
+            "[[assets]]",
+            'id = "hero"',
+            'kind = "image"',
+            'path = "media/image/hero.png"',
+            "",
+            "[[tracks]]",
+            'id = "v1"',
+            'name = "V1 Main Video"',
+            'kind = "video"',
+            "",
+            "[[tracks.layers]]",
+            'id = "hero-layer"',
+            'label = "Hero Layer"',
+            "start = 0",
+            "duration = 1",
+            "z_index = 1",
+            "",
+            "[tracks.layers.content]",
+            'type = "image"',
+            'asset_id = "hero"',
+            "",
+            "[tracks.layers.transform]",
+            "x = 0",
+            "y = 0",
+            "width = 320",
+            "height = 180",
+            "scale = 1",
+            "rotation = 0",
+            "opacity = 1",
+            "",
+          ].join("\n");
         }
         if (cmd === "import_asset") {
           return 'id = "import"\nkind = "image"\npath = "media/image/import.png"\n';
@@ -42,6 +83,7 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
 
   await page.getByRole("button", { name: "Open project" }).click();
   await expect(page.getByText("プロジェクトを開きました")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hero Layer" })).toBeVisible();
 
   await page.getByRole("button", { name: "Save project" }).click();
   await expect(page.getByText("プロジェクトを保存しました")).toBeVisible();
@@ -68,4 +110,6 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
     },
     { cmd: "build_project", args: { path: "mm.toml" } },
   ]);
+  expect(calls[1].args.toml).toEqual(expect.stringContaining("[[tracks.layers]]"));
+  expect(calls[1].args.toml).toEqual(expect.stringContaining('label = "Hero Layer"'));
 });
