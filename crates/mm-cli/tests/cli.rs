@@ -61,6 +61,65 @@ fn validate_command_outputs_japanese_with_lang() {
 }
 
 #[test]
+fn help_outputs_japanese_with_lang() {
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("ja")
+        .arg("--help")
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("使用方法: mm"));
+    assert!(stdout.contains("動画を書き出す"));
+    assert!(stdout.contains("オプション:"));
+}
+
+#[test]
+fn help_outputs_english_with_lang() {
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("en")
+        .arg("--help")
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("Usage: mm"));
+    assert!(stdout.contains("Render a movie"));
+    assert!(stdout.contains("Options:"));
+}
+
+#[test]
+fn plugin_help_outputs_japanese_and_english() {
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("ja")
+        .arg("plugin")
+        .arg("--help")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("使用方法: mm plugin"));
+    assert!(stdout.contains("plugin をインストールする"));
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("en")
+        .arg("plugin")
+        .arg("--help")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("Usage: mm plugin"));
+    assert!(stdout.contains("Install a plugin"));
+}
+
+#[test]
 fn preview_command_writes_png_frame() {
     let dir = tempfile::tempdir().unwrap();
     write_valid_project(dir.path());
