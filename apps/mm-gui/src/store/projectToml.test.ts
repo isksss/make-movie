@@ -194,6 +194,7 @@ opacity = 1
       trackId: "v1",
       label: "Hero",
       contentKind: "video",
+      assetId: "hero",
       fit: "cover",
       trimStart: 2,
       trimEnd: 4,
@@ -202,6 +203,60 @@ opacity = 1
       zIndex: 2,
     });
     expect(parsed.layers[0].transform.width).toBe(320);
+  });
+
+  it("同種assetが複数あってもlayerごとのasset_idを保持してserializeできる", () => {
+    const parsed = parseProjectToml(`
+[settings]
+title = "Asset Ref"
+width = 1280
+height = 720
+fps = 30
+sample_rate = 48000
+duration = 3
+output = "output/asset-ref.mp4"
+
+[[assets]]
+id = "first"
+kind = "image"
+path = "media/image/first.png"
+
+[[assets]]
+id = "second"
+kind = "image"
+path = "media/image/second.png"
+
+[[tracks]]
+id = "v1"
+name = "V1"
+kind = "video"
+
+[[tracks.layers]]
+id = "image-layer"
+label = "Image"
+start = 0
+duration = 3
+z_index = 1
+
+[tracks.layers.content]
+type = "image"
+asset_id = "second"
+
+[tracks.layers.transform]
+x = 0
+y = 0
+width = 320
+height = 180
+scale = 1
+rotation = 0
+opacity = 1
+`);
+
+    expect(parsed.layers[0].assetId).toBe("second");
+
+    const toml = serializeProjectToToml(parsed);
+    expect(toml).toContain('asset_id = "second"');
+    expect(toml).not.toContain('asset_id = "first"');
   });
 
   it("Text layer styleをTOMLからparseできる", () => {
