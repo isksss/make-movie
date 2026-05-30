@@ -4,8 +4,11 @@ use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use wasmtime::component::{Component, Instance as ComponentInstance, Linker as ComponentLinker};
+use wasmtime::component::{
+    Component, Instance as ComponentInstance, Linker as ComponentLinker, ResourceTable,
+};
 use wasmtime::{Engine, Instance, Linker, Module, Store};
+use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginReference {
@@ -225,8 +228,11 @@ impl PluginRuntime {
     fn instantiate_plugin(&self, component_path: &Path) -> Result<PluginInstance> {
         match Component::from_file(&self.engine, component_path) {
             Ok(component) => {
-                let linker = ComponentLinker::new(&self.engine);
-                let mut store = Store::new(&self.engine, ());
+                let mut linker = ComponentLinker::new(&self.engine);
+                wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(|error| {
+                    anyhow!("WASI Preview2 host を plugin linker へ追加できません ({error})")
+                })?;
+                let mut store = Store::new(&self.engine, PluginWasiState::default());
                 let instance = linker
                     .instantiate(&mut store, &component)
                     .map_err(|error| {
@@ -357,7 +363,7 @@ impl WasmPluginInstance {
 }
 
 struct ComponentPluginInstance {
-    store: Store<()>,
+    store: Store<PluginWasiState>,
     instance: ComponentInstance,
 }
 
@@ -389,6 +395,29 @@ impl ComponentPluginInstance {
             anyhow!("plugin component export '{name}' の実行に失敗しました ({error})")
         })?;
         Ok(())
+    }
+}
+
+struct PluginWasiState {
+    ctx: WasiCtx,
+    table: ResourceTable,
+}
+
+impl Default for PluginWasiState {
+    fn default() -> Self {
+        Self {
+            ctx: WasiCtx::builder().build(),
+            table: ResourceTable::new(),
+        }
+    }
+}
+
+impl WasiView for PluginWasiState {
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.ctx,
+            table: &mut self.table,
+        }
     }
 }
 
@@ -1143,6 +1172,44 @@ component = "theme.wasm"
 
         runtime.shutdown_all()?;
         assert!(!runtime.loaded_plugins()[0].initialized);
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_loads_component_model_plugin_with_wasi_preview2_imports() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let component = dir.path().join("plugin-wasi.component.wasm");
+        fs::write(
+            &component,
+            wat::parse_str(
+                r#"
+                (component
+                    (import "wasi:random/random@0.2.6" (instance $random
+                        (export "get-random-u64" (func (result u64)))
+                        (export "get-random-bytes" (func (param "len" u64) (result (list u8))))
+                    ))
+                    (core module $plugin
+                        (memory (export "memory") 1)
+                        (data (i32.const 0) "\08\00\00\00\0d\00\00\00")
+                        (data (i32.const 8) "{\"wasi\":\"p2\"}")
+                        (func (export "metadata") (result i32)
+                            i32.const 0)
+                    )
+                    (core instance $instance (instantiate $plugin))
+                    (func (export "metadata") (result string)
+                        (canon lift (core func $instance "metadata")
+                            (memory $instance "memory")))
+                )
+                "#,
+            )?,
+        )?;
+        let mut runtime = PluginRuntime::new();
+
+        runtime.load(manifest(), &component)?;
+        assert_eq!(
+            runtime.loaded_plugins()[0].abi_metadata.as_deref(),
+            Some(r#"{"wasi":"p2"}"#)
+        );
         Ok(())
     }
 
