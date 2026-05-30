@@ -1,4 +1,5 @@
-import type { PreviewState, ProjectState, TimelineLayer } from "../types";
+import { layerTransform } from "../types";
+import type { LayerTransform, PreviewState, ProjectState, TimelineLayer } from "../types";
 
 export interface PreviewViewport {
   width: number;
@@ -75,7 +76,7 @@ export function drawPreviewFrame(
   context.clearRect(0, 0, canvas.width, canvas.height);
   drawCheckerboard(context, canvas.width, canvas.height);
   drawProjectFrame(context, viewport);
-  drawLayers(context, viewport, activePreviewItems(project, preview.currentTime));
+  drawLayers(context, project, viewport, activePreviewItems(project, preview.currentTime));
   drawHud(context, project, preview, viewport);
 }
 
@@ -101,17 +102,25 @@ function drawProjectFrame(context: CanvasRenderingContext2D, viewport: PreviewVi
 
 function drawLayers(
   context: CanvasRenderingContext2D,
+  project: ProjectState,
   viewport: PreviewViewport,
   items: PreviewDrawItem[],
 ) {
   for (const item of items) {
-    const padding = 24 * viewport.scale;
-    const width = Math.max(90, viewport.width - padding * 2);
-    const height = Math.max(28, 48 * viewport.scale);
-    const y = viewport.offsetY + padding + item.lane * (height + 12);
-    const x = viewport.offsetX + (viewport.width - width) / 2;
+    const transform = resolvePreviewTransform(item.layer.transform, project, item.lane);
+    const width = Math.max(24, transform.width * transform.scale * viewport.scale);
+    const height = Math.max(18, transform.height * transform.scale * viewport.scale);
+    const x = viewport.offsetX + transform.x * viewport.scale;
+    const y = viewport.offsetY + transform.y * viewport.scale;
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    context.save();
+    context.translate(centerX, centerY);
+    context.rotate((transform.rotation * Math.PI) / 180);
+    context.translate(-centerX, -centerY);
     context.globalAlpha =
-      item.layer.contentKind === "audio" || item.layer.contentKind === "voice" ? 0.72 : 0.94;
+      (item.layer.contentKind === "audio" || item.layer.contentKind === "voice" ? 0.72 : 0.94) *
+      transform.opacity;
     context.fillStyle = item.color;
     roundedRect(context, x, y, width, height, 6);
     context.fill();
@@ -120,7 +129,29 @@ function drawLayers(
     context.font = "600 14px system-ui, sans-serif";
     context.textBaseline = "middle";
     context.fillText(item.layer.label, x + 12, y + height / 2);
+    context.restore();
   }
+}
+
+function resolvePreviewTransform(
+  transform: LayerTransform,
+  project: ProjectState,
+  lane: number,
+): LayerTransform {
+  const fallback = layerTransform({
+    x: project.settings.width * 0.08,
+    y: 120 + lane * 92,
+    width: project.settings.width * 0.84,
+    height: 64,
+  });
+  const resolved = layerTransform({ ...fallback, ...transform });
+  return {
+    ...resolved,
+    width: resolved.width > 0 ? resolved.width : fallback.width,
+    height: resolved.height > 0 ? resolved.height : fallback.height,
+    scale: resolved.scale > 0 ? resolved.scale : fallback.scale,
+    opacity: resolved.opacity >= 0 ? Math.min(resolved.opacity, 1) : fallback.opacity,
+  };
 }
 
 function drawHud(

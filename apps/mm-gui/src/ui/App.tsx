@@ -19,6 +19,7 @@ import { useState } from "react";
 import { commands } from "../services/tauri";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
+import { layerTransform } from "../types";
 import type { ProjectState } from "../types";
 import { PreviewCanvas } from "./PreviewCanvas";
 
@@ -38,6 +39,7 @@ export function App() {
     splitLayer,
     duplicateLayer,
     deleteLayer,
+    updateLayerTransform,
     updateTtsText,
     undo,
     redo,
@@ -48,6 +50,7 @@ export function App() {
   const [commandStatus, setCommandStatus] = useState("Ready");
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
+  const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
   const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
     try {
       await action();
@@ -203,6 +206,102 @@ export function App() {
                 Z
                 <input readOnly value={selectedLayer.zIndex} />
               </label>
+              {selectedTransform ? (
+                <>
+                  <label>
+                    X
+                    <input
+                      onChange={(event) =>
+                        updateLayerTransform(selectedLayer.id, { x: Number(event.target.value) })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedTransform.x}
+                    />
+                  </label>
+                  <label>
+                    Y
+                    <input
+                      onChange={(event) =>
+                        updateLayerTransform(selectedLayer.id, { y: Number(event.target.value) })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedTransform.y}
+                    />
+                  </label>
+                  <label>
+                    Width
+                    <input
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerTransform(selectedLayer.id, {
+                          width: Number(event.target.value),
+                        })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedTransform.width}
+                    />
+                  </label>
+                  <label>
+                    Height
+                    <input
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerTransform(selectedLayer.id, {
+                          height: Number(event.target.value),
+                        })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedTransform.height}
+                    />
+                  </label>
+                  <label>
+                    Scale
+                    <input
+                      min={0.01}
+                      onChange={(event) =>
+                        updateLayerTransform(selectedLayer.id, {
+                          scale: Number(event.target.value),
+                        })
+                      }
+                      step={0.01}
+                      type="number"
+                      value={selectedTransform.scale}
+                    />
+                  </label>
+                  <label>
+                    Rotation
+                    <input
+                      onChange={(event) =>
+                        updateLayerTransform(selectedLayer.id, {
+                          rotation: Number(event.target.value),
+                        })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedTransform.rotation}
+                    />
+                  </label>
+                  <label>
+                    Opacity
+                    <input
+                      max={1}
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerTransform(selectedLayer.id, {
+                          opacity: Number(event.target.value),
+                        })
+                      }
+                      step={0.01}
+                      type="number"
+                      value={selectedTransform.opacity}
+                    />
+                  </label>
+                </>
+              ) : null}
             </div>
           ) : null}
           <div className="tts-editor">
