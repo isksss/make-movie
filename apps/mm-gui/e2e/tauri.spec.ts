@@ -251,6 +251,9 @@ test("TTS編集は保存TOMLのVoiceレイヤーに反映される", async ({ pa
   await page.getByLabel("言語").selectOption("en");
 
   const ttsEditor = page.locator(".tts-editor");
+  await ttsEditor
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("coeiro_ink");
   await ttsEditor.getByLabel("Speaker").fill("四国めたん");
   await ttsEditor.locator("textarea").fill("保存される文章");
   await ttsEditor.getByRole("spinbutton", { name: "Speed", exact: true }).fill("1.4");
@@ -271,6 +274,7 @@ test("TTS編集は保存TOMLのVoiceレイヤーに反映される", async ({ pa
     },
   ]);
   expect(calls[0].args.toml).toEqual(expect.stringContaining('type = "voice"'));
+  expect(calls[0].args.toml).toEqual(expect.stringContaining('provider = "coeiro_ink"'));
   expect(calls[0].args.toml).toEqual(expect.stringContaining('text = "保存される文章"'));
   expect(calls[0].args.toml).toEqual(expect.stringContaining("speed = 1.4"));
   expect(calls[0].args.toml).toEqual(expect.stringContaining("pitch = 0.2"));

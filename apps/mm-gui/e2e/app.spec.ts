@@ -47,6 +47,9 @@ test("Languageで日本語と英語を切り替えられる", async ({ page }) =
   await expect(page.getByLabel("フィット").locator("option[value='blur_background']")).toHaveText(
     "ぼかし背景",
   );
+  await expect(page.getByLabel("プロバイダー").locator("option[value='aivis_speech']")).toHaveText(
+    "AivisSpeech",
+  );
 
   await useEnglish(page);
 
@@ -62,6 +65,11 @@ test("Languageで日本語と英語を切り替えられる", async ({ page }) =
       .getByRole("combobox", { name: "Fit", exact: true })
       .locator("option[value='blur_background']"),
   ).toHaveText("Blur background");
+  await expect(
+    page
+      .getByRole("combobox", { name: "Provider", exact: true })
+      .locator("option[value='coeiro_ink']"),
+  ).toHaveText("CoeiroInk");
 
   await page.getByRole("combobox", { name: "Language" }).selectOption("ja");
   await expect(page.getByText("アセット")).toBeVisible();
@@ -403,16 +411,28 @@ test("PropertyからKeyframeを編集しUndo/Redoできる", async ({ page }) =>
   await expect(property).toHaveValue("opacity");
 });
 
-test("TTS編集でSpeaker/Text/Speed/Pitch/Emotionを編集しUndo/Redoできる", async ({ page }) => {
+test("TTS編集でProvider/Speaker/Text/Speed/Pitch/Emotionを編集しUndo/Redoできる", async ({
+  page,
+}) => {
   await page.goto("/");
   await useEnglish(page);
 
   const ttsEditor = page.locator(".tts-editor");
+  const provider = ttsEditor.getByRole("combobox", { name: "Provider", exact: true });
   const speaker = ttsEditor.getByLabel("Speaker");
   const text = ttsEditor.locator("textarea");
   const speed = ttsEditor.getByRole("spinbutton", { name: "Speed", exact: true });
   const pitch = ttsEditor.getByRole("spinbutton", { name: "Pitch", exact: true });
   const emotion = ttsEditor.getByRole("textbox", { name: "Emotion", exact: true });
+
+  await provider.selectOption("coeiro_ink");
+  await expect(provider).toHaveValue("coeiro_ink");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(provider).toHaveValue("voicevox");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(provider).toHaveValue("coeiro_ink");
 
   await speaker.fill("四国めたん");
   await text.fill("更新後の文章");
@@ -431,4 +451,5 @@ test("TTS編集でSpeaker/Text/Speed/Pitch/Emotionを編集しUndo/Redoできる
 
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(emotion).toHaveValue("happy");
+  await expect(provider).toHaveValue("coeiro_ink");
 });
