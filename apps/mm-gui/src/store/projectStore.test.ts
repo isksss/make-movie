@@ -241,25 +241,50 @@ describe("projectStore", () => {
     useProjectStore.getState().updateLayerVisual("intro-image", {
       crop: { x: 10, y: 20, width: 320, height: 180 },
       mask: "rounded_rect",
+      maskRadius: 24,
       fit: "blur_background",
     });
 
     let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.crop).toEqual({ x: 10, y: 20, width: 320, height: 180 });
     expect(layer?.mask).toBe("rounded_rect");
+    expect(layer?.maskRadius).toBe(24);
     expect(layer?.fit).toBe("blur_background");
 
     useProjectStore.getState().undo();
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.crop).toEqual({ x: 0, y: 0, width: 0, height: 0 });
     expect(layer?.mask).toBe("none");
+    expect(layer?.maskRadius).toBeUndefined();
     expect(layer?.fit).toBe("contain");
 
     useProjectStore.getState().redo();
     layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
     expect(layer?.crop.width).toBe(320);
     expect(layer?.mask).toBe("rounded_rect");
+    expect(layer?.maskRadius).toBe(24);
     expect(layer?.fit).toBe("blur_background");
+  });
+
+  it("SVG mask pathを更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerVisual("intro-image", {
+      mask: "svg",
+      maskPath: "media/mask/window.svg",
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.mask).toBe("svg");
+    expect(layer?.maskPath).toBe("media/mask/window.svg");
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.mask).toBe("none");
+    expect(layer?.maskPath).toBeUndefined();
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.mask).toBe("svg");
+    expect(layer?.maskPath).toBe("media/mask/window.svg");
   });
 
   it("layer trimを更新しUndo/Redoできる", () => {

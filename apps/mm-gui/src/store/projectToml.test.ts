@@ -79,6 +79,38 @@ describe("projectToml", () => {
     expect(toml).toContain("[tracks.layers.content.shadow]");
   });
 
+  it("Image maskのradiusとSVG pathをTOMLへserializeできる", () => {
+    const roundedToml = serializeProjectToToml({
+      ...initialProject,
+      layers: [
+        {
+          ...initialProject.layers[1],
+          mask: "rounded_rect",
+          maskRadius: 28,
+        },
+      ],
+    });
+
+    expect(roundedToml).toContain("[tracks.layers.content.mask]");
+    expect(roundedToml).toContain('type = "rounded_rect"');
+    expect(roundedToml).toContain("radius = 28");
+
+    const svgToml = serializeProjectToToml({
+      ...initialProject,
+      layers: [
+        {
+          ...initialProject.layers[1],
+          mask: "svg",
+          maskPath: "media/mask/window.svg",
+        },
+      ],
+    });
+
+    expect(svgToml).toContain("[tracks.layers.content.mask]");
+    expect(svgToml).toContain('type = "svg"');
+    expect(svgToml).toContain('path = "media/mask/window.svg"');
+  });
+
   it("plugin宣言をserializeできる", () => {
     const toml = serializeProjectToToml({
       ...initialProject,
@@ -214,6 +246,118 @@ opacity = 1
       zIndex: 2,
     });
     expect(parsed.layers[0].transform.width).toBe(320);
+  });
+
+  it("Image maskとcropをTOMLからparseできる", () => {
+    const parsed = parseProjectToml(`
+[settings]
+title = "Mask"
+width = 1280
+height = 720
+fps = 30
+sample_rate = 48000
+duration = 3
+output = "output/mask.mp4"
+
+[[assets]]
+id = "hero"
+kind = "image"
+path = "media/image/hero.png"
+
+[[tracks]]
+id = "v2"
+name = "V2 Overlay"
+kind = "video"
+
+[[tracks.layers]]
+id = "hero-layer"
+label = "Hero"
+start = 0
+duration = 3
+z_index = 2
+
+[tracks.layers.content]
+type = "image"
+asset_id = "hero"
+fit = "contain"
+
+[tracks.layers.content.crop]
+x = 10
+y = 20
+width = 320
+height = 180
+
+[tracks.layers.content.mask]
+type = "svg"
+path = "media/mask/window.svg"
+
+[tracks.layers.transform]
+x = 0
+y = 0
+width = 320
+height = 180
+scale = 1
+rotation = 0
+opacity = 1
+`);
+
+    expect(parsed.layers[0]).toMatchObject({
+      crop: { x: 10, y: 20, width: 320, height: 180 },
+      mask: "svg",
+      maskPath: "media/mask/window.svg",
+    });
+  });
+
+  it("RoundedRect mask radiusをTOMLからparseできる", () => {
+    const parsed = parseProjectToml(`
+[settings]
+title = "Mask Radius"
+width = 1280
+height = 720
+fps = 30
+sample_rate = 48000
+duration = 3
+output = "output/mask-radius.mp4"
+
+[[assets]]
+id = "hero"
+kind = "image"
+path = "media/image/hero.png"
+
+[[tracks]]
+id = "v2"
+name = "V2 Overlay"
+kind = "video"
+
+[[tracks.layers]]
+id = "hero-layer"
+label = "Hero"
+start = 0
+duration = 3
+z_index = 2
+
+[tracks.layers.content]
+type = "image"
+asset_id = "hero"
+
+[tracks.layers.content.mask]
+type = "rounded_rect"
+radius = 32
+
+[tracks.layers.transform]
+x = 0
+y = 0
+width = 320
+height = 180
+scale = 1
+rotation = 0
+opacity = 1
+`);
+
+    expect(parsed.layers[0]).toMatchObject({
+      mask: "rounded_rect",
+      maskRadius: 32,
+    });
   });
 
   it("同種assetが複数あってもlayerごとのasset_idを保持してserializeできる", () => {

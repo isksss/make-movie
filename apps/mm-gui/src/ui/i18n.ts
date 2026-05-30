@@ -62,6 +62,8 @@ export const messages = {
     cropWidth: "クロップ幅",
     cropHeight: "クロップ高さ",
     mask: "マスク",
+    maskRadius: "マスク半径",
+    maskPath: "マスクパス",
     fit: "フィット",
     speaker: "話者",
     text: "テキスト",
@@ -147,6 +149,8 @@ export const messages = {
     cropWidth: "Crop Width",
     cropHeight: "Crop Height",
     mask: "Mask",
+    maskRadius: "Mask Radius",
+    maskPath: "Mask Path",
     fit: "Fit",
     speaker: "Speaker",
     text: "Text",
@@ -206,6 +210,7 @@ export const optionLabels: Record<
       circle: "円",
       rounded_rect: "角丸四角",
       ellipse: "楕円",
+      svg: "SVG",
     },
     fit: {
       none: "なし",
@@ -267,6 +272,7 @@ export const optionLabels: Record<
       circle: "Circle",
       rounded_rect: "Rounded rectangle",
       ellipse: "Ellipse",
+      svg: "SVG",
     },
     fit: {
       none: "None",

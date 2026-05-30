@@ -1,5 +1,5 @@
 export type AssetKind = "video" | "image" | "audio" | "subtitle" | "font" | "mask";
-export type MaskKind = "none" | "circle" | "rounded_rect" | "ellipse";
+export type MaskKind = "none" | "circle" | "rounded_rect" | "ellipse" | "svg";
 export type FitMode = "none" | "contain" | "cover" | "stretch" | "blur_background";
 export type TransitionKind = "none" | "crossfade" | "wipe" | "push" | "zoom" | "blur" | "flash";
 export type EffectKind =
@@ -78,6 +78,8 @@ export interface TimelineLayer {
   transform: LayerTransform;
   crop: CropRect;
   mask: MaskKind;
+  maskRadius?: number;
+  maskPath?: string;
   fit: FitMode;
   text: TextLayerStyle;
   voice: VoiceLayerSettings;
