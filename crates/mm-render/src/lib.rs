@@ -10,6 +10,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+
+const GPU_COPY_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
@@ -71,23 +74,19 @@ impl FfmpegLocator for SystemFfmpegLocator {
 }
 
 pub fn render_project(project: &Project, options: &RenderOptions) -> Result<()> {
-    match options.backend {
-        RenderBackend::Cpu => {}
-        RenderBackend::Auto => {
-            let _ = probe_gpu_backend();
-        }
-        RenderBackend::Gpu => {
-            let probe = probe_gpu_backend();
-            if !probe.available {
-                bail!("GPU renderer backend を利用できません");
-            }
-        }
-    }
+    let active_backend = match options.backend {
+        RenderBackend::Cpu => ActiveRenderBackend::Cpu,
+        RenderBackend::Auto => match GpuFrameRenderer::new() {
+            Ok(renderer) => ActiveRenderBackend::GpuHybrid(renderer),
+            Err(_) => ActiveRenderBackend::Cpu,
+        },
+        RenderBackend::Gpu => ActiveRenderBackend::GpuHybrid(GpuFrameRenderer::new()?),
+    };
     let ffmpeg = match &options.ffmpeg_path {
         Some(path) => path.clone(),
         None => SystemFfmpegLocator.ffmpeg_path(project)?,
     };
-    encode_with_ffmpeg(project, options, &ffmpeg)
+    encode_with_ffmpeg(project, options, &ffmpeg, active_backend)
 }
 
 pub fn probe_gpu_backend() -> GpuProbe {
@@ -114,7 +113,17 @@ pub fn probe_gpu_backend() -> GpuProbe {
     })
 }
 
-fn encode_with_ffmpeg(project: &Project, options: &RenderOptions, ffmpeg: &Path) -> Result<()> {
+enum ActiveRenderBackend {
+    Cpu,
+    GpuHybrid(GpuFrameRenderer),
+}
+
+fn encode_with_ffmpeg(
+    project: &Project,
+    options: &RenderOptions,
+    ffmpeg: &Path,
+    backend: ActiveRenderBackend,
+) -> Result<()> {
     let width = project.settings.width;
     let height = project.settings.height;
     let fps = project.settings.fps;
@@ -154,7 +163,12 @@ fn encode_with_ffmpeg(project: &Project, options: &RenderOptions, ffmpeg: &Path)
         let stdin = child.stdin.as_mut().context("ffmpeg stdin を開けません")?;
         for frame_index in 0..frame_count {
             let time = frame_index as f64 / f64::from(fps);
-            let frame = render_frame(project, options, time)?;
+            let frame = match &backend {
+                ActiveRenderBackend::Cpu => render_frame(project, options, time)?,
+                ActiveRenderBackend::GpuHybrid(renderer) => {
+                    render_frame_gpu_hybrid_with_renderer(project, options, time, renderer)?
+                }
+            };
             stdin
                 .write_all(frame.as_raw())
                 .context("ffmpeg へ frame を書き込めません")?;
@@ -174,11 +188,43 @@ fn encode_with_ffmpeg(project: &Project, options: &RenderOptions, ffmpeg: &Path)
 }
 
 pub fn render_frame(project: &Project, options: &RenderOptions, time: f64) -> Result<RgbaImage> {
-    let mut frame = RgbaImage::from_pixel(
+    let frame = RgbaImage::from_pixel(
         project.settings.width,
         project.settings.height,
         options.background,
     );
+    render_frame_on_base(project, options, time, frame)
+}
+
+pub fn render_frame_gpu_hybrid(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+) -> Result<RgbaImage> {
+    let renderer = GpuFrameRenderer::new()?;
+    render_frame_gpu_hybrid_with_renderer(project, options, time, &renderer)
+}
+
+fn render_frame_gpu_hybrid_with_renderer(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+    renderer: &GpuFrameRenderer,
+) -> Result<RgbaImage> {
+    let frame = renderer.background_frame(
+        project.settings.width,
+        project.settings.height,
+        options.background,
+    )?;
+    render_frame_on_base(project, options, time, frame)
+}
+
+fn render_frame_on_base(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+    mut frame: RgbaImage,
+) -> Result<RgbaImage> {
     let mut layers = project
         .tracks
         .iter()
@@ -191,6 +237,154 @@ pub fn render_frame(project: &Project, options: &RenderOptions, time: f64) -> Re
         draw_layer(project, options, &mut frame, layer, time)?;
     }
     Ok(frame)
+}
+
+pub fn gpu_background_frame(width: u32, height: u32, color: Rgba<u8>) -> Result<RgbaImage> {
+    GpuFrameRenderer::new()?.background_frame(width, height, color)
+}
+
+pub struct GpuFrameRenderer {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+impl GpuFrameRenderer {
+    pub fn new() -> Result<Self> {
+        pollster::block_on(Self::new_async())
+    }
+
+    async fn new_async() -> Result<Self> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .await
+            .context("GPU adapter を取得できません")?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("mm gpu renderer"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::downlevel_defaults(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::Off,
+            })
+            .await
+            .context("GPU device を作成できません")?;
+        Ok(Self { device, queue })
+    }
+
+    pub fn background_frame(&self, width: u32, height: u32, color: Rgba<u8>) -> Result<RgbaImage> {
+        if width == 0 || height == 0 {
+            bail!("GPU frame size は 1px 以上である必要があります");
+        }
+
+        let texture_size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("mm gpu background texture"),
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let unpadded_bytes_per_row = width * 4;
+        let padded_bytes_per_row = align_to(unpadded_bytes_per_row, GPU_COPY_ALIGNMENT);
+        let output_buffer_size = u64::from(padded_bytes_per_row) * u64::from(height);
+        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mm gpu readback buffer"),
+            size: output_buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let clear_color = wgpu::Color {
+            r: f64::from(color[0]) / 255.0,
+            g: f64::from(color[1]) / 255.0,
+            b: f64::from(color[2]) / 255.0,
+            a: f64::from(color[3]) / 255.0,
+        };
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("mm gpu frame encoder"),
+            });
+        {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("mm gpu clear pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &output_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            texture_size,
+        );
+        self.queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = output_buffer.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait)
+            .context("GPU readback の完了待機に失敗しました")?;
+        receiver
+            .recv()
+            .context("GPU readback callback を受信できません")?
+            .context("GPU readback buffer を map できません")?;
+
+        let mapped = buffer_slice.get_mapped_range();
+        let mut pixels = vec![0; (u64::from(width) * u64::from(height) * 4) as usize];
+        for row in 0..height as usize {
+            let source_offset = row * padded_bytes_per_row as usize;
+            let target_offset = row * unpadded_bytes_per_row as usize;
+            pixels[target_offset..target_offset + unpadded_bytes_per_row as usize].copy_from_slice(
+                &mapped[source_offset..source_offset + unpadded_bytes_per_row as usize],
+            );
+        }
+        drop(mapped);
+        output_buffer.unmap();
+
+        RgbaImage::from_raw(width, height, pixels)
+            .context("GPU frame を RgbaImage に変換できません")
+    }
+}
+
+fn align_to(value: u32, alignment: u32) -> u32 {
+    value.div_ceil(alignment) * alignment
 }
 
 fn draw_layer(
@@ -702,6 +896,47 @@ mod tests {
 
         assert!(has_non_background_pixel(&frame, options.background));
         Ok(())
+    }
+
+    #[test]
+    fn render_frame_gpu_hybrid_draws_on_gpu_background_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let project = text_project();
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([11, 22, 33, 255]);
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 2.0)?;
+
+        assert_eq!(frame.get_pixel(0, 0), &options.background);
+        Ok(())
+    }
+
+    #[test]
+    fn gpu_background_frame_clears_texture_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+
+        let frame = gpu_background_frame(4, 3, Rgba([9, 18, 27, 255]))?;
+
+        assert_eq!(frame.dimensions(), (4, 3));
+        assert!(frame.pixels().all(|pixel| pixel == &Rgba([9, 18, 27, 255])));
+        Ok(())
+    }
+
+    #[test]
+    fn align_to_rounds_up_to_copy_alignment() {
+        assert_eq!(align_to(4, GPU_COPY_ALIGNMENT), GPU_COPY_ALIGNMENT);
+        assert_eq!(
+            align_to(GPU_COPY_ALIGNMENT, GPU_COPY_ALIGNMENT),
+            GPU_COPY_ALIGNMENT
+        );
+        assert_eq!(
+            align_to(GPU_COPY_ALIGNMENT + 1, GPU_COPY_ALIGNMENT),
+            GPU_COPY_ALIGNMENT * 2
+        );
     }
 
     #[test]
