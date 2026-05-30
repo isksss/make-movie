@@ -120,6 +120,10 @@ test.beforeEach(async ({ page }) => {
             'repo = "gui-theme"',
             'version = "1.0.0"',
             "",
+            "[[groups]]",
+            'id = "opening"',
+            'name = "Opening Group"',
+            "",
             "[[tracks]]",
             'id = "v1"',
             'name = "V1 Main Video"',
@@ -168,6 +172,7 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
   await page.getByRole("button", { name: "プロジェクトを開く" }).click();
   await expect(page.getByText("プロジェクトを開きました")).toBeVisible();
   await expect(page.getByRole("button", { name: "Hero Layer" })).toBeVisible();
+  await page.getByRole("combobox", { name: "グループ" }).selectOption("opening");
 
   await page.getByRole("button", { name: "プロジェクトを保存" }).click();
   await expect(page.getByText("プロジェクトを保存しました")).toBeVisible();
@@ -211,6 +216,8 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
   expect(calls[1].args.toml).toEqual(expect.stringContaining('asset_id = "hero"'));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('asset_mode = "link"'));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('ffmpeg = "/opt/mm/ffmpeg"'));
+  expect(calls[1].args.toml).toEqual(expect.stringContaining("[[groups]]"));
+  expect(calls[1].args.toml).toEqual(expect.stringContaining('group_id = "opening"'));
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[plugin]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('repo = "gui-theme"'));
   expect(calls[3].args.toml).toEqual(expect.stringContaining('path = "media/image/import.png"'));
