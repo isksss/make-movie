@@ -241,6 +241,37 @@ test("Assetsペインへのdropでassetとlayerを取り込める", async ({ pag
   ]);
 });
 
+test("TTS編集は保存TOMLのVoiceレイヤーに反映される", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("言語").selectOption("en");
+
+  const ttsEditor = page.locator(".tts-editor");
+  await ttsEditor.getByLabel("Speaker").fill("四国めたん");
+  await ttsEditor.locator("textarea").fill("保存される文章");
+  await ttsEditor.getByRole("spinbutton", { name: "Speed", exact: true }).fill("1.4");
+  await ttsEditor.getByRole("spinbutton", { name: "Pitch", exact: true }).fill("0.2");
+  await ttsEditor.getByRole("textbox", { name: "Emotion", exact: true }).fill("happy");
+
+  await page.getByRole("button", { name: "Save project" }).click();
+  await expect(page.getByText("Project saved")).toBeVisible();
+
+  const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
+  expect(calls).toEqual([
+    {
+      cmd: "save_project",
+      args: expect.objectContaining({
+        path: "mm.toml",
+        toml: expect.stringContaining('speaker = "四国めたん"'),
+      }),
+    },
+  ]);
+  expect(calls[0].args.toml).toEqual(expect.stringContaining('type = "voice"'));
+  expect(calls[0].args.toml).toEqual(expect.stringContaining('text = "保存される文章"'));
+  expect(calls[0].args.toml).toEqual(expect.stringContaining("speed = 1.4"));
+  expect(calls[0].args.toml).toEqual(expect.stringContaining("pitch = 0.2"));
+  expect(calls[0].args.toml).toEqual(expect.stringContaining('emotion = "happy"'));
+});
+
 test("Plugin Managerからplugin操作を呼び出せる", async ({ page }) => {
   await page.goto("/");
 
