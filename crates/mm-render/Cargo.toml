@@ -6,7 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ab_glyph.workspace = true
 anyhow.workspace = true
 image.workspace = true
 mm-core = { path = "../mm-core" }
 which.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
