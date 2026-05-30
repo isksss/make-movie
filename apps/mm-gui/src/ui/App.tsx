@@ -26,13 +26,49 @@ import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
 import type { AssetKind, ProjectState } from "../types";
-import { messages } from "./i18n";
+import { messages, optionLabels } from "./i18n";
 import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
 
 const defaultProjectPath = "mm.toml";
 const defaultImportPath = "media/image/import.png";
 const plugins = ["VOICEVOX", "AivisSpeech", "Template Pack"] as const;
+const textAlignOptions = ["left", "center", "right"] as const;
+const maskOptions = ["none", "circle", "rounded_rect", "ellipse"] as const;
+const fitOptions = ["none", "contain", "cover", "stretch", "blur_background"] as const;
+const transitionOptions = ["none", "crossfade", "wipe", "push", "zoom", "blur", "flash"] as const;
+const effectOptions = [
+  "none",
+  "fade_in",
+  "fade_out",
+  "blur",
+  "zoom",
+  "slide",
+  "brightness",
+  "contrast",
+  "saturation",
+  "pixelate",
+  "motion_blur",
+] as const;
+const animatedPropertyOptions = [
+  "none",
+  "x",
+  "y",
+  "scale",
+  "rotation",
+  "opacity",
+  "width",
+  "height",
+] as const;
+const easingOptions = [
+  "linear",
+  "ease_in",
+  "ease_out",
+  "ease_in_out",
+  "ease_out_back",
+  "bounce",
+  "elastic",
+] as const;
 
 export function App() {
   const {
@@ -63,6 +99,7 @@ export function App() {
   const preview = usePreviewStore();
   const [locale, setLocale] = useState<Locale>("ja");
   const t = messages[locale];
+  const labels = optionLabels[locale];
   const [commandStatus, setCommandStatus] = useState<string>(t.ready);
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
@@ -370,9 +407,11 @@ export function App() {
                       }
                       value={selectedText.align}
                     >
-                      <option value="left">left</option>
-                      <option value="center">center</option>
-                      <option value="right">right</option>
+                      {textAlignOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {labels.textAlign[value]}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label>
@@ -617,10 +656,11 @@ export function App() {
                       }
                       value={selectedLayer.mask}
                     >
-                      <option value="none">none</option>
-                      <option value="circle">circle</option>
-                      <option value="rounded_rect">rounded_rect</option>
-                      <option value="ellipse">ellipse</option>
+                      {maskOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {labels.mask[value]}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label>
@@ -633,11 +673,11 @@ export function App() {
                       }
                       value={selectedLayer.fit}
                     >
-                      <option value="none">none</option>
-                      <option value="contain">contain</option>
-                      <option value="cover">cover</option>
-                      <option value="stretch">stretch</option>
-                      <option value="blur_background">blur_background</option>
+                      {fitOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {labels.fit[value]}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   {selectedTransition ? (
@@ -653,13 +693,11 @@ export function App() {
                           }
                           value={selectedTransition.kind}
                         >
-                          <option value="none">none</option>
-                          <option value="crossfade">crossfade</option>
-                          <option value="wipe">wipe</option>
-                          <option value="push">push</option>
-                          <option value="zoom">zoom</option>
-                          <option value="blur">blur</option>
-                          <option value="flash">flash</option>
+                          {transitionOptions.map((value) => (
+                            <option key={value} value={value}>
+                              {labels.transition[value]}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <label>
@@ -691,17 +729,11 @@ export function App() {
                           }
                           value={selectedEffect.kind}
                         >
-                          <option value="none">none</option>
-                          <option value="fade_in">fade_in</option>
-                          <option value="fade_out">fade_out</option>
-                          <option value="blur">blur</option>
-                          <option value="zoom">zoom</option>
-                          <option value="slide">slide</option>
-                          <option value="brightness">brightness</option>
-                          <option value="contrast">contrast</option>
-                          <option value="saturation">saturation</option>
-                          <option value="pixelate">pixelate</option>
-                          <option value="motion_blur">motion_blur</option>
+                          {effectOptions.map((value) => (
+                            <option key={value} value={value}>
+                              {labels.effect[value]}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <label>
@@ -772,14 +804,11 @@ export function App() {
                           }
                           value={selectedAnimation.property}
                         >
-                          <option value="none">none</option>
-                          <option value="x">x</option>
-                          <option value="y">y</option>
-                          <option value="scale">scale</option>
-                          <option value="rotation">rotation</option>
-                          <option value="opacity">opacity</option>
-                          <option value="width">width</option>
-                          <option value="height">height</option>
+                          {animatedPropertyOptions.map((value) => (
+                            <option key={value} value={value}>
+                              {labels.animatedProperty[value]}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <label>
@@ -793,13 +822,11 @@ export function App() {
                           }
                           value={selectedAnimation.easing}
                         >
-                          <option value="linear">linear</option>
-                          <option value="ease_in">ease_in</option>
-                          <option value="ease_out">ease_out</option>
-                          <option value="ease_in_out">ease_in_out</option>
-                          <option value="ease_out_back">ease_out_back</option>
-                          <option value="bounce">bounce</option>
-                          <option value="elastic">elastic</option>
+                          {easingOptions.map((value) => (
+                            <option key={value} value={value}>
+                              {labels.easing[value]}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <label>
