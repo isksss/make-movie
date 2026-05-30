@@ -27,7 +27,6 @@ import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
 
 const defaultProjectPath = "mm.toml";
-const defaultProjectRoot = ".";
 const defaultImportPath = "media/image/import.png";
 
 export function App() {
@@ -103,10 +102,14 @@ export function App() {
           </button>
           <button
             onClick={() =>
-              runCommand(
-                () => commands.importAsset(defaultProjectRoot, defaultImportPath, "image"),
-                t.imported,
-              )
+              runCommand(async () => {
+                const toml = await commands.importAssetIntoProject(
+                  defaultProjectPath,
+                  defaultImportPath,
+                  "image",
+                );
+                setProject(parseProjectToml(toml, project));
+              }, t.imported)
             }
             title={t.importAsset}
           >
