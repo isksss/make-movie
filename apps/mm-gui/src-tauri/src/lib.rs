@@ -2,7 +2,9 @@ use mm_core::{
     import_asset as import_core_asset, import_asset_into_project as import_core_asset_into_project,
     load_project as load_core_project, save_project as save_core_project,
 };
-use mm_plugin_runtime::{PluginManager, PluginReference};
+use mm_plugin_runtime::{
+    default_global_config_path, default_plugin_dir, PluginManager, PluginReference,
+};
 use mm_render::{render_project, RenderOptions};
 use std::env;
 use std::path::PathBuf;
@@ -74,11 +76,39 @@ fn remove_plugin(name: String) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn install_configured_plugins(
+    project_path: String,
+    global_config: Option<String>,
+) -> Result<Vec<String>, String> {
+    let project_path = PathBuf::from(project_path);
+    let project_root = project_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let manager = PluginManager::new(plugin_dir(), project_root.join("mm.lock"));
+    let global_config = global_config
+        .map(PathBuf::from)
+        .unwrap_or_else(default_global_config_path);
+    let plugins = manager
+        .install_configured_plugins(global_config, &project_path)
+        .map_err(|error| error.to_string())?;
+    Ok(plugins
+        .into_iter()
+        .map(|plugin| plugin.manifest.name)
+        .collect())
+}
+
 fn plugin_manager() -> PluginManager {
     match (env::var("MM_PLUGIN_DIR"), env::var("MM_PLUGIN_LOCK")) {
         (Ok(plugin_dir), Ok(lock_path)) => PluginManager::new(plugin_dir, lock_path),
         _ => PluginManager::default(),
     }
+}
+
+fn plugin_dir() -> PathBuf {
+    env::var("MM_PLUGIN_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| default_plugin_dir())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -91,6 +121,7 @@ pub fn run() {
             import_asset,
             import_asset_into_project,
             install_plugin,
+            install_configured_plugins,
             update_plugin,
             remove_plugin
         ])
@@ -155,6 +186,38 @@ mod tests {
         env::remove_var("MM_PLUGIN_LOCK");
         let lock = std::fs::read_to_string(dir.path().join("mm.lock")).expect("lock を読める");
         assert!(!lock.contains("theme"));
+    }
+
+    #[test]
+    fn plugin_command_installs_configured_plugins_to_project_lock() {
+        let dir = tempfile::tempdir().expect("temp dir を作成できる");
+        let plugin_dir = dir.path().join("plugins");
+        let project_path = dir.path().join("mm.toml");
+        let component_path = dir.path().join("theme.wasm");
+        std::fs::write(&component_path, b"\0asmcomponent").expect("component を書ける");
+        std::fs::write(
+            &project_path,
+            format!(
+                r#"[[plugin]]
+repository = "local"
+name = "theme"
+path = "{}"
+"#,
+                component_path.display()
+            ),
+        )
+        .expect("project config を書ける");
+        env::set_var("MM_PLUGIN_DIR", &plugin_dir);
+
+        let installed =
+            install_configured_plugins(project_path.display().to_string(), None)
+                .expect("設定済み plugin を install できる");
+
+        env::remove_var("MM_PLUGIN_DIR");
+        assert_eq!(installed, vec!["theme"]);
+        let lock = std::fs::read_to_string(dir.path().join("mm.lock")).expect("project lock を読める");
+        assert!(lock.contains("theme"));
+        assert!(plugin_dir.join("theme/theme.wasm").exists());
     }
 
     fn sample_project_toml(title: &str) -> String {

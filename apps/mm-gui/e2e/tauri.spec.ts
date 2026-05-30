@@ -285,6 +285,9 @@ test("Plugin Managerからplugin操作を呼び出せる", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("region", { name: "プラグイン管理" })).toBeVisible();
+  await page.getByRole("button", { name: "設定からインストール" }).click();
+  await expect(page.getByText("設定済みプラグインをインストールしました")).toBeVisible();
+
   await page.getByRole("button", { name: "インストール VOICEVOX" }).click();
   await expect(page.getByText("プラグインをインストールしました")).toBeVisible();
 
@@ -296,6 +299,7 @@ test("Plugin Managerからplugin操作を呼び出せる", async ({ page }) => {
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
   expect(calls).toEqual([
+    { cmd: "install_configured_plugins", args: { projectPath: "mm.toml" } },
     { cmd: "install_plugin", args: { name: "VOICEVOX" } },
     { cmd: "update_plugin", args: { name: "AivisSpeech" } },
     { cmd: "remove_plugin", args: { name: "Template Pack" } },
@@ -308,10 +312,17 @@ test("Plugin ManagerはProject plugin宣言を表示して操作できる", asyn
   await page.getByRole("button", { name: "プロジェクトを開く" }).click();
   await expect(page.getByText("gui-theme")).toBeVisible();
 
+  await page.getByRole("button", { name: "設定からインストール" }).click();
+  await expect(page.getByText("設定済みプラグインをインストールしました")).toBeVisible();
+
   await page.getByRole("button", { name: "インストール gui-theme" }).click();
   await expect(page.getByText("プラグインをインストールしました")).toBeVisible();
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
+  expect(calls).toContainEqual({
+    cmd: "install_configured_plugins",
+    args: { projectPath: "mm.toml" },
+  });
   expect(calls).toContainEqual({ cmd: "install_plugin", args: { name: "gui-theme" } });
 });
 
@@ -321,9 +332,15 @@ test("Plugin Managerは英語表示でもplugin操作を呼び出せる", async 
   await page.getByLabel("言語").selectOption("en");
   await expect(page.getByRole("region", { name: "Plugin Manager" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Install configured" }).click();
+  await expect(page.getByText("Configured plugins installed")).toBeVisible();
+
   await page.getByRole("button", { name: "Install VOICEVOX" }).click();
   await expect(page.getByText("Plugin installed")).toBeVisible();
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
-  expect(calls).toEqual([{ cmd: "install_plugin", args: { name: "VOICEVOX" } }]);
+  expect(calls).toEqual([
+    { cmd: "install_configured_plugins", args: { projectPath: "mm.toml" } },
+    { cmd: "install_plugin", args: { name: "VOICEVOX" } },
+  ]);
 });
