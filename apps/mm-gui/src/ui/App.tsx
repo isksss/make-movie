@@ -34,6 +34,7 @@ const defaultProjectPath = "mm.toml";
 const defaultImportPath = "media/image/import.png";
 const fallbackPlugins = ["VOICEVOX", "AivisSpeech", "Template Pack"] as const;
 const textAlignOptions = ["left", "center", "right"] as const;
+const gradientDirectionOptions = ["vertical", "horizontal"] as const;
 const maskOptions = ["none", "circle", "rounded_rect", "ellipse", "svg"] as const;
 const fitOptions = ["none", "contain", "cover", "stretch", "blur_background"] as const;
 const transitionOptions = ["none", "crossfade", "wipe", "push", "zoom", "blur", "flash"] as const;
@@ -373,6 +374,74 @@ export function App() {
                       value={selectedText.color}
                     />
                   </label>
+                  <label>
+                    {t.textGradient}
+                    <input
+                      checked={selectedText.gradient.enabled}
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          gradient: {
+                            ...selectedText.gradient,
+                            enabled: event.target.checked,
+                          },
+                        })
+                      }
+                      type="checkbox"
+                    />
+                  </label>
+                  {selectedText.gradient.enabled ? (
+                    <>
+                      <label>
+                        {t.gradientStartColor}
+                        <input
+                          onChange={(event) =>
+                            updateLayerText(selectedLayer.id, {
+                              gradient: {
+                                ...selectedText.gradient,
+                                startColor: event.target.value,
+                              },
+                            })
+                          }
+                          value={selectedText.gradient.startColor}
+                        />
+                      </label>
+                      <label>
+                        {t.gradientEndColor}
+                        <input
+                          onChange={(event) =>
+                            updateLayerText(selectedLayer.id, {
+                              gradient: {
+                                ...selectedText.gradient,
+                                endColor: event.target.value,
+                              },
+                            })
+                          }
+                          value={selectedText.gradient.endColor}
+                        />
+                      </label>
+                      <label>
+                        {t.gradientDirection}
+                        <select
+                          onChange={(event) =>
+                            updateLayerText(selectedLayer.id, {
+                              gradient: {
+                                ...selectedText.gradient,
+                                direction: event.target
+                                  .value as ProjectState["layers"][number]["text"]["gradient"]["direction"],
+                              },
+                            })
+                          }
+                          value={selectedText.gradient.direction}
+                        >
+                          {gradientDirectionOptions.map((value) => (
+                            <option key={value} value={value}>
+                              {labels.gradientDirection[value]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  ) : null}
                   <label>
                     {t.letterSpacing}
                     <input

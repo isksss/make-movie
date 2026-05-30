@@ -181,6 +181,8 @@ pub struct TextLayer {
     #[serde(default)]
     pub shadow: Option<TextShadow>,
     #[serde(default)]
+    pub gradient: Option<TextGradient>,
+    #[serde(default)]
     pub align: TextAlign,
 }
 
@@ -208,6 +210,21 @@ pub struct TextShadow {
     pub offset_x: f32,
     pub offset_y: f32,
     pub blur: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextGradient {
+    pub start_color: String,
+    pub end_color: String,
+    pub direction: GradientDirection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GradientDirection {
+    #[default]
+    Vertical,
+    Horizontal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1083,6 +1100,11 @@ mod tests {
                         line_spacing: 1.2,
                         stroke: None,
                         shadow: None,
+                        gradient: Some(TextGradient {
+                            start_color: "#ffcc00".to_string(),
+                            end_color: "#ffffff".to_string(),
+                            direction: GradientDirection::Vertical,
+                        }),
                         align: TextAlign::Center,
                     }),
                     transform: Transform::default(),
@@ -1116,6 +1138,13 @@ mod tests {
         assert_eq!(loaded.settings.title, "サンプル");
         assert_eq!(loaded.assets[0].kind, AssetKind::Image);
         assert_eq!(loaded.tracks[0].layers.len(), 1);
+        let LayerContent::Text(text) = &loaded.tracks[0].layers[0].content else {
+            panic!("text layer として読み込まれていません");
+        };
+        assert_eq!(
+            text.gradient.as_ref().map(|gradient| gradient.direction),
+            Some(GradientDirection::Vertical)
+        );
         Ok(())
     }
 
