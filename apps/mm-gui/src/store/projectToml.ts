@@ -5,6 +5,8 @@ import type {
   FitMode,
   LayerEffect,
   LayerTransition,
+  PluginDeclaration,
+  PluginRepository,
   ProjectState,
   Scene,
   TimelineLayer,
@@ -12,7 +14,15 @@ import type {
 } from "../types";
 import { initialProject } from "./projectStore";
 
-type Section = "settings" | "asset" | "scene" | "track" | "layer" | "content" | "transform";
+type Section =
+  | "settings"
+  | "asset"
+  | "scene"
+  | "plugin"
+  | "track"
+  | "layer"
+  | "content"
+  | "transform";
 
 export function serializeProjectToToml(project: ProjectState): string {
   const lines: string[] = [
@@ -49,6 +59,10 @@ export function serializeProjectToToml(project: ProjectState): string {
     );
   }
 
+  for (const plugin of project.plugins) {
+    appendPlugin(lines, plugin);
+  }
+
   for (const track of project.tracks) {
     lines.push(
       "[[tracks]]",
@@ -73,11 +87,13 @@ export function parseProjectToml(
     settings: { ...fallback.settings },
     assets: [],
     scenes: [],
+    plugins: [],
     tracks: [],
     layers: [],
   };
   let section: Section | null = null;
   let currentScene: Scene | null = null;
+  let currentPlugin: PluginDeclaration | null = null;
   let currentTrack: Track | null = null;
   let currentLayer: TimelineLayer | null = null;
 
@@ -99,6 +115,12 @@ export function parseProjectToml(
       section = "scene";
       currentScene = { id: "", name: "", start: 0, duration: 1 };
       project.scenes.push(currentScene);
+      continue;
+    }
+    if (line === "[[plugin]]") {
+      section = "plugin";
+      currentPlugin = { repository: "github" };
+      project.plugins.push(currentPlugin);
       continue;
     }
     if (line === "[[tracks]]") {
@@ -132,6 +154,7 @@ export function parseProjectToml(
       key,
       parseTomlValue(rawValue),
       currentScene,
+      currentPlugin,
       currentTrack,
       currentLayer,
     );
@@ -141,9 +164,20 @@ export function parseProjectToml(
     settings: project.settings,
     assets: project.assets.length > 0 ? project.assets : structuredClone(fallback.assets),
     scenes: project.scenes.length > 0 ? project.scenes : structuredClone(fallback.scenes),
+    plugins: project.plugins,
     tracks: project.tracks.length > 0 ? project.tracks : structuredClone(fallback.tracks),
     layers: project.layers.length > 0 ? project.layers : structuredClone(fallback.layers),
   };
+}
+
+function appendPlugin(lines: string[], plugin: PluginDeclaration) {
+  lines.push("[[plugin]]", `repository = ${quote(plugin.repository)}`);
+  if (plugin.owner) lines.push(`owner = ${quote(plugin.owner)}`);
+  if (plugin.repo) lines.push(`repo = ${quote(plugin.repo)}`);
+  if (plugin.version) lines.push(`version = ${quote(plugin.version)}`);
+  if (plugin.url) lines.push(`url = ${quote(plugin.url)}`);
+  if (plugin.path) lines.push(`path = ${quote(plugin.path)}`);
+  lines.push("");
 }
 
 function appendLayer(lines: string[], project: ProjectState, layer: TimelineLayer) {
@@ -301,6 +335,7 @@ function assignValue(
   key: string,
   value: string | number,
   currentScene: Scene | null,
+  currentPlugin: PluginDeclaration | null,
   currentTrack: Track | null,
   currentLayer: TimelineLayer | null,
 ) {
@@ -311,6 +346,8 @@ function assignValue(
     if (asset) assignAsset(asset, key, value);
   } else if (section === "scene" && currentScene) {
     assignScene(currentScene, key, value);
+  } else if (section === "plugin" && currentPlugin) {
+    assignPlugin(currentPlugin, key, value);
   } else if (section === "track" && currentTrack) {
     assignTrack(currentTrack, key, value);
   } else if (section === "layer" && currentLayer) {
@@ -340,6 +377,33 @@ function assignAsset(asset: Asset, key: string, value: string | number) {
 function assignScene(scene: Scene, key: string, value: string | number) {
   if (key === "id" || key === "name") scene[key] = String(value);
   else if (key === "start" || key === "duration") scene[key] = Number(value);
+}
+
+function assignPlugin(plugin: PluginDeclaration, key: string, value: string | number) {
+  if (key === "repository") {
+    plugin.repository = parsePluginRepository(value);
+  } else if (
+    key === "owner" ||
+    key === "repo" ||
+    key === "version" ||
+    key === "url" ||
+    key === "path"
+  ) {
+    plugin[key] = String(value);
+  }
+}
+
+function parsePluginRepository(value: string | number): PluginRepository {
+  const repository = String(value);
+  if (
+    repository === "github" ||
+    repository === "gitlab" ||
+    repository === "url" ||
+    repository === "local"
+  ) {
+    return repository;
+  }
+  return "github";
 }
 
 function assignTrack(track: Track, key: string, value: string | number) {
