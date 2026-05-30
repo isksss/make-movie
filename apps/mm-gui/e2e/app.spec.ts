@@ -127,20 +127,49 @@ test("PropertyからTransformを編集しUndo/Redoできる", async ({ page }) =
     .getByRole("region", { name: "Timeline" })
     .getByRole("button", { name: "Intro Image" })
     .click();
-  await expect(page.getByLabel("Width")).toHaveValue("840");
-  await page.getByLabel("Width").fill("420");
-  await expect(page.getByLabel("Width")).toHaveValue("420");
+  const width = page.getByRole("spinbutton", { name: "Width", exact: true });
+  await expect(width).toHaveValue("840");
+  await width.fill("420");
+  await expect(width).toHaveValue("420");
 
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(page.getByLabel("Width")).toHaveValue("840");
+  await expect(width).toHaveValue("840");
 
   await page.getByRole("button", { name: "Redo" }).click();
-  await expect(page.getByLabel("Width")).toHaveValue("420");
+  await expect(width).toHaveValue("420");
 
-  await page.getByLabel("Height").fill("240");
+  const height = page.getByRole("spinbutton", { name: "Height", exact: true });
+  await height.fill("240");
   await page.getByLabel("Rotation").fill("15");
   await page.getByLabel("Opacity").fill("0.5");
-  await expect(page.getByLabel("Height")).toHaveValue("240");
+  await expect(height).toHaveValue("240");
   await expect(page.getByLabel("Rotation")).toHaveValue("15");
   await expect(page.getByLabel("Opacity")).toHaveValue("0.5");
+});
+
+test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  await expect(page.getByLabel("Fit")).toHaveValue("contain");
+
+  await page.getByLabel("Crop X").fill("10");
+  await page.getByLabel("Crop Y").fill("20");
+  await page.getByLabel("Crop Width").fill("320");
+  await page.getByLabel("Crop Height").fill("180");
+  await page.getByLabel("Mask").selectOption("rounded_rect");
+  await page.getByLabel("Fit").selectOption("blur_background");
+
+  await expect(page.getByLabel("Crop Width")).toHaveValue("320");
+  await expect(page.getByLabel("Mask")).toHaveValue("rounded_rect");
+  await expect(page.getByLabel("Fit")).toHaveValue("blur_background");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByLabel("Fit")).toHaveValue("contain");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByLabel("Fit")).toHaveValue("blur_background");
 });

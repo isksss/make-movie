@@ -1,6 +1,15 @@
 import { create } from "zustand";
-import { layerTransform } from "../types";
-import type { Asset, LayerTransform, ProjectState, TimelineLayer, TtsState } from "../types";
+import { cropRect, layerTransform } from "../types";
+import type {
+  Asset,
+  CropRect,
+  FitMode,
+  LayerTransform,
+  MaskKind,
+  ProjectState,
+  TimelineLayer,
+  TtsState,
+} from "../types";
 
 interface ProjectSnapshot {
   project: ProjectState;
@@ -24,6 +33,10 @@ interface ProjectStore {
   duplicateLayer: (id: string) => void;
   deleteLayer: (id: string) => void;
   updateLayerTransform: (id: string, transform: Partial<LayerTransform>) => void;
+  updateLayerVisual: (
+    id: string,
+    visual: Partial<{ crop: Partial<CropRect>; mask: MaskKind; fit: FitMode }>,
+  ) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
   undo: () => void;
@@ -63,6 +76,9 @@ export const initialProject: ProjectState = {
       duration: 4,
       zIndex: 10,
       transform: layerTransform({ x: 140, y: 120, width: 800, height: 120 }),
+      crop: cropRect(),
+      mask: "none",
+      fit: "none",
     },
     {
       id: "intro-image",
@@ -73,6 +89,9 @@ export const initialProject: ProjectState = {
       duration: 7,
       zIndex: 2,
       transform: layerTransform({ x: 120, y: 300, width: 840, height: 480 }),
+      crop: cropRect(),
+      mask: "none",
+      fit: "contain",
     },
     {
       id: "subtitle-main",
@@ -83,6 +102,9 @@ export const initialProject: ProjectState = {
       duration: 9,
       zIndex: 12,
       transform: layerTransform({ x: 120, y: 1600, width: 840, height: 120 }),
+      crop: cropRect(),
+      mask: "none",
+      fit: "none",
     },
     {
       id: "voice-main",
@@ -93,6 +115,9 @@ export const initialProject: ProjectState = {
       duration: 12,
       zIndex: 0,
       transform: layerTransform({ x: 120, y: 1760, width: 840, height: 80 }),
+      crop: cropRect(),
+      mask: "none",
+      fit: "none",
     },
   ],
 };
@@ -241,6 +266,30 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                 ...layerTransform(layer.transform),
                 ...transform,
               },
+            };
+          }),
+        },
+      })),
+    ),
+  updateLayerVisual: (id, visual) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            return {
+              ...layer,
+              crop: visual.crop
+                ? {
+                    ...cropRect(layer.crop),
+                    ...visual.crop,
+                  }
+                : layer.crop,
+              mask: visual.mask ?? layer.mask,
+              fit: visual.fit ?? layer.fit,
             };
           }),
         },

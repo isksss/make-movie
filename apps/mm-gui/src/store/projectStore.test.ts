@@ -152,4 +152,29 @@ describe("projectStore", () => {
     expect(layer?.transform.width).toBe(420);
     expect(layer?.transform.height).toBe(240);
   });
+
+  it("layer のCrop/Mask/Fitを更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerVisual("intro-image", {
+      crop: { x: 10, y: 20, width: 320, height: 180 },
+      mask: "rounded_rect",
+      fit: "blur_background",
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.crop).toEqual({ x: 10, y: 20, width: 320, height: 180 });
+    expect(layer?.mask).toBe("rounded_rect");
+    expect(layer?.fit).toBe("blur_background");
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.crop).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    expect(layer?.mask).toBe("none");
+    expect(layer?.fit).toBe("contain");
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.crop.width).toBe(320);
+    expect(layer?.mask).toBe("rounded_rect");
+    expect(layer?.fit).toBe("blur_background");
+  });
 });
