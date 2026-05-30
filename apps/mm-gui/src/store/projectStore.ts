@@ -97,11 +97,13 @@ export const initialProject: ProjectState = {
     { id: "a2", name: "A2 BGM", kind: "audio" },
   ],
   scenes: [{ id: "intro", name: "Intro", start: 0, duration: 12 }],
+  groups: [{ id: "opening", name: "Opening Group" }],
   plugins: [],
   layers: [
     {
       id: "title",
       trackId: "v3",
+      groupId: "opening",
       label: "Title Text",
       contentKind: "text",
       assetId: null,
@@ -123,6 +125,7 @@ export const initialProject: ProjectState = {
     {
       id: "intro-image",
       trackId: "v2",
+      groupId: "opening",
       label: "Intro Image",
       contentKind: "image",
       assetId: "intro",
@@ -144,6 +147,7 @@ export const initialProject: ProjectState = {
     {
       id: "subtitle-main",
       trackId: "v4",
+      groupId: null,
       label: "Subtitle",
       contentKind: "subtitle",
       assetId: "subtitle",
@@ -165,6 +169,7 @@ export const initialProject: ProjectState = {
     {
       id: "voice-main",
       trackId: "a1",
+      groupId: null,
       label: "Narration",
       contentKind: "voice",
       assetId: null,
@@ -188,6 +193,7 @@ export const initialProject: ProjectState = {
     {
       id: "voice-audio",
       trackId: "a2",
+      groupId: null,
       label: "Voice Audio",
       contentKind: "audio",
       assetId: "voice",

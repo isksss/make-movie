@@ -16,6 +16,8 @@ pub struct Project {
     #[serde(default)]
     pub scenes: Vec<Scene>,
     #[serde(default)]
+    pub groups: Vec<TimelineGroup>,
+    #[serde(default)]
     pub plugins: Vec<PluginDeclaration>,
 }
 
@@ -84,6 +86,12 @@ pub struct Scene {
     pub duration: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimelineGroup {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub id: String,
@@ -103,6 +111,8 @@ pub enum TrackKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     pub id: String,
+    #[serde(default)]
+    pub group_id: Option<String>,
     pub start: f64,
     pub duration: f64,
     pub z_index: i32,
@@ -778,6 +788,7 @@ pub fn validate_project(project: &Project, project_root: impl AsRef<Path>) -> Re
     for track in &project.tracks {
         for layer in &track.layers {
             validate_time_range(&layer.id, layer.start, layer.duration)?;
+            validate_layer_group(project, layer)?;
             validate_layer_content(project, layer)?;
         }
     }
@@ -801,6 +812,19 @@ fn validate_time_range(id: &str, start: f64, duration: f64) -> Result<()> {
     }
     if duration <= 0.0 {
         bail!("'{}' の duration は 0 より大きい必要があります", id);
+    }
+    Ok(())
+}
+
+fn validate_layer_group(project: &Project, layer: &Layer) -> Result<()> {
+    if let Some(group_id) = &layer.group_id {
+        if !project.groups.iter().any(|group| group.id == *group_id) {
+            bail!(
+                "layer '{}' の group_id '{}' が groups に存在しません",
+                layer.id,
+                group_id
+            );
+        }
     }
     Ok(())
 }
@@ -993,6 +1017,7 @@ fn imported_asset_layer(project: &Project, asset: &Asset) -> Option<Layer> {
         + 1;
     Some(Layer {
         id: layer_id,
+        group_id: None,
         start: 0.0,
         duration,
         z_index,
@@ -1088,6 +1113,7 @@ mod tests {
                 kind: TrackKind::Video,
                 layers: vec![Layer {
                     id: "layer1".to_string(),
+                    group_id: Some("opening".to_string()),
                     start: 0.0,
                     duration: 3.0,
                     z_index: 0,
@@ -1119,6 +1145,10 @@ mod tests {
                 start: 0.0,
                 duration: 3.0,
             }],
+            groups: vec![TimelineGroup {
+                id: "opening".to_string(),
+                name: "Opening Group".to_string(),
+            }],
             plugins: vec![],
         }
     }
@@ -1138,6 +1168,11 @@ mod tests {
         assert_eq!(loaded.settings.title, "サンプル");
         assert_eq!(loaded.assets[0].kind, AssetKind::Image);
         assert_eq!(loaded.tracks[0].layers.len(), 1);
+        assert_eq!(loaded.groups[0].name, "Opening Group");
+        assert_eq!(
+            loaded.tracks[0].layers[0].group_id.as_deref(),
+            Some("opening")
+        );
         let LayerContent::Text(text) = &loaded.tracks[0].layers[0].content else {
             panic!("text layer として読み込まれていません");
         };
@@ -1156,6 +1191,17 @@ mod tests {
         let err = validate_project(&project, dir.path()).unwrap_err();
 
         assert!(err.to_string().contains("存在しません"));
+    }
+
+    #[test]
+    fn validate_rejects_missing_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = sample_project(PathBuf::from("media/image/sample.png"));
+        project.groups.clear();
+
+        let err = validate_project(&project, dir.path()).unwrap_err();
+
+        assert!(err.to_string().contains("group_id"));
     }
 
     #[test]
@@ -1204,6 +1250,7 @@ mod tests {
                 assets: vec![],
                 tracks: vec![],
                 scenes: vec![],
+                groups: vec![],
                 plugins: vec![],
             },
             &project_path,
