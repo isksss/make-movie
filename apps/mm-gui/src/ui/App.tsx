@@ -34,7 +34,7 @@ const defaultProjectPath = "mm.toml";
 const defaultImportPath = "media/image/import.png";
 const plugins = ["VOICEVOX", "AivisSpeech", "Template Pack"] as const;
 const textAlignOptions = ["left", "center", "right"] as const;
-const maskOptions = ["none", "circle", "rounded_rect", "ellipse"] as const;
+const maskOptions = ["none", "circle", "rounded_rect", "ellipse", "svg"] as const;
 const fitOptions = ["none", "contain", "cover", "stretch", "blur_background"] as const;
 const transitionOptions = ["none", "crossfade", "wipe", "push", "zoom", "blur", "flash"] as const;
 const effectOptions = [
@@ -663,6 +663,35 @@ export function App() {
                       ))}
                     </select>
                   </label>
+                  {selectedLayer.mask === "rounded_rect" ? (
+                    <label>
+                      {t.maskRadius}
+                      <input
+                        min={0}
+                        onChange={(event) =>
+                          updateLayerVisual(selectedLayer.id, {
+                            maskRadius: Number(event.target.value),
+                          })
+                        }
+                        step={1}
+                        type="number"
+                        value={selectedLayer.maskRadius ?? 16}
+                      />
+                    </label>
+                  ) : null}
+                  {selectedLayer.mask === "svg" ? (
+                    <label>
+                      {t.maskPath}
+                      <input
+                        onChange={(event) =>
+                          updateLayerVisual(selectedLayer.id, {
+                            maskPath: event.target.value,
+                          })
+                        }
+                        value={selectedLayer.maskPath ?? ""}
+                      />
+                    </label>
+                  ) : null}
                   <label>
                     {t.fit}
                     <select

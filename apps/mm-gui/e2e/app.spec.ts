@@ -52,12 +52,16 @@ test("Languageで日本語と英語を切り替えられる", async ({ page }) =
 
   await expect(page.getByText("Assets")).toBeVisible();
   await expect(page.getByText("Property", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Mask").locator("option[value='rounded_rect']")).toHaveText(
-    "Rounded rectangle",
-  );
-  await expect(page.getByLabel("Fit").locator("option[value='blur_background']")).toHaveText(
-    "Blur background",
-  );
+  await expect(
+    page
+      .getByRole("combobox", { name: "Mask", exact: true })
+      .locator("option[value='rounded_rect']"),
+  ).toHaveText("Rounded rectangle");
+  await expect(
+    page
+      .getByRole("combobox", { name: "Fit", exact: true })
+      .locator("option[value='blur_background']"),
+  ).toHaveText("Blur background");
 
   await page.getByRole("combobox", { name: "Language" }).selectOption("ja");
   await expect(page.getByText("アセット")).toBeVisible();
@@ -227,24 +231,39 @@ test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page 
     .getByRole("region", { name: "Timeline" })
     .getByRole("button", { name: "Intro Image" })
     .click();
-  await expect(page.getByLabel("Fit")).toHaveValue("contain");
+  await expect(page.getByRole("combobox", { name: "Fit", exact: true })).toHaveValue("contain");
 
   await page.getByLabel("Crop X").fill("10");
   await page.getByLabel("Crop Y").fill("20");
   await page.getByLabel("Crop Width").fill("320");
   await page.getByLabel("Crop Height").fill("180");
-  await page.getByLabel("Mask").selectOption("rounded_rect");
-  await page.getByLabel("Fit").selectOption("blur_background");
+  await page.getByRole("combobox", { name: "Mask", exact: true }).selectOption("rounded_rect");
+  await page.getByRole("spinbutton", { name: "Mask Radius", exact: true }).fill("24");
+  await page.getByRole("combobox", { name: "Fit", exact: true }).selectOption("blur_background");
 
   await expect(page.getByLabel("Crop Width")).toHaveValue("320");
-  await expect(page.getByLabel("Mask")).toHaveValue("rounded_rect");
-  await expect(page.getByLabel("Fit")).toHaveValue("blur_background");
+  await expect(page.getByRole("combobox", { name: "Mask", exact: true })).toHaveValue(
+    "rounded_rect",
+  );
+  await expect(page.getByRole("spinbutton", { name: "Mask Radius", exact: true })).toHaveValue(
+    "24",
+  );
+  await expect(page.getByRole("combobox", { name: "Fit", exact: true })).toHaveValue(
+    "blur_background",
+  );
 
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(page.getByLabel("Fit")).toHaveValue("contain");
+  await expect(page.getByRole("combobox", { name: "Fit", exact: true })).toHaveValue("contain");
 
   await page.getByRole("button", { name: "Redo" }).click();
-  await expect(page.getByLabel("Fit")).toHaveValue("blur_background");
+  await expect(page.getByRole("combobox", { name: "Fit", exact: true })).toHaveValue(
+    "blur_background",
+  );
+
+  await page.getByRole("combobox", { name: "Mask", exact: true }).selectOption("svg");
+  await page.getByLabel("Mask Path").fill("media/mask/window.svg");
+  await expect(page.getByRole("combobox", { name: "Mask", exact: true })).toHaveValue("svg");
+  await expect(page.getByLabel("Mask Path")).toHaveValue("media/mask/window.svg");
 });
 
 test("PropertyからTrimを編集しUndo/Redoできる", async ({ page }) => {

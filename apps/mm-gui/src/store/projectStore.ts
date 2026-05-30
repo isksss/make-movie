@@ -52,7 +52,13 @@ interface ProjectStore {
   updateLayerTransform: (id: string, transform: Partial<LayerTransform>) => void;
   updateLayerVisual: (
     id: string,
-    visual: Partial<{ crop: Partial<CropRect>; mask: MaskKind; fit: FitMode }>,
+    visual: Partial<{
+      crop: Partial<CropRect>;
+      mask: MaskKind;
+      maskRadius: number;
+      maskPath: string;
+      fit: FitMode;
+    }>,
   ) => void;
   updateLayerText: (id: string, text: Partial<TextLayerStyle>) => void;
   updateLayerVoice: (id: string, voice: Partial<VoiceLayerSettings>) => void;
@@ -381,6 +387,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
                   }
                 : layer.crop,
               mask: visual.mask ?? layer.mask,
+              maskRadius: visual.maskRadius ?? layer.maskRadius,
+              maskPath: visual.maskPath ?? layer.maskPath,
               fit: visual.fit ?? layer.fit,
             };
           }),
