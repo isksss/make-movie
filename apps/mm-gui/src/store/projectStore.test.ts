@@ -90,4 +90,39 @@ describe("projectStore", () => {
     expect(useProjectStore.getState().project.layers).toHaveLength(initialProject.layers.length);
     expect(useProjectStore.getState().canUndo).toBe(false);
   });
+
+  it("layer を複製しUndo/Redoできる", () => {
+    useProjectStore.getState().duplicateLayer("intro-image");
+
+    let layers = useProjectStore.getState().project.layers;
+    const copiedLayer = layers.find((item) => item.id === "intro-image-copy");
+    expect(copiedLayer?.label).toBe("Intro Image Copy");
+    expect(copiedLayer?.start).toBe(7.5);
+    expect(copiedLayer?.duration).toBe(7);
+    expect(useProjectStore.getState().selectedLayerId).toBe("intro-image-copy");
+
+    useProjectStore.getState().undo();
+    layers = useProjectStore.getState().project.layers;
+    expect(layers.some((item) => item.id === "intro-image-copy")).toBe(false);
+
+    useProjectStore.getState().redo();
+    layers = useProjectStore.getState().project.layers;
+    expect(layers.some((item) => item.id === "intro-image-copy")).toBe(true);
+  });
+
+  it("layer を削除しUndo/Redoできる", () => {
+    useProjectStore.getState().deleteLayer("intro-image");
+
+    let layers = useProjectStore.getState().project.layers;
+    expect(layers.some((item) => item.id === "intro-image")).toBe(false);
+    expect(useProjectStore.getState().selectedLayerId).toBe("subtitle-main");
+
+    useProjectStore.getState().undo();
+    layers = useProjectStore.getState().project.layers;
+    expect(layers.some((item) => item.id === "intro-image")).toBe(true);
+
+    useProjectStore.getState().redo();
+    layers = useProjectStore.getState().project.layers;
+    expect(layers.some((item) => item.id === "intro-image")).toBe(false);
+  });
 });

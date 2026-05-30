@@ -98,3 +98,24 @@ test("選択中クリップを現在時刻でCutできる", async ({ page }) => 
     }),
   ).toBeVisible();
 });
+
+test("選択中クリップをDuplicate/Deleteできる", async ({ page }) => {
+  await page.goto("/");
+
+  const timeline = page.getByRole("region", { name: "Timeline" });
+  await timeline.getByRole("button", { name: "Intro Image" }).click();
+  await page.getByRole("button", { name: "Duplicate" }).click();
+
+  await expect(timeline.getByRole("button", { name: "Intro Image Copy" })).toBeVisible();
+  await expect(page.getByLabel("Layer")).toHaveValue("Intro Image Copy");
+  await expect(page.getByLabel("Start")).toHaveValue("7.5");
+
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(timeline.getByRole("button", { name: "Intro Image Copy" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(timeline.getByRole("button", { name: "Intro Image Copy" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(timeline.getByRole("button", { name: "Intro Image Copy" })).toHaveCount(0);
+});
