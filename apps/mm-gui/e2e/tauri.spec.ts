@@ -298,6 +298,19 @@ test("Plugin Managerからplugin操作を呼び出せる", async ({ page }) => {
   ]);
 });
 
+test("Plugin ManagerはProject plugin宣言を表示して操作できる", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "プロジェクトを開く" }).click();
+  await expect(page.getByText("gui-theme")).toBeVisible();
+
+  await page.getByRole("button", { name: "インストール gui-theme" }).click();
+  await expect(page.getByText("プラグインをインストールしました")).toBeVisible();
+
+  const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
+  expect(calls).toContainEqual({ cmd: "install_plugin", args: { name: "gui-theme" } });
+});
+
 test("Plugin Managerは英語表示でもplugin操作を呼び出せる", async ({ page }) => {
   await page.goto("/");
 

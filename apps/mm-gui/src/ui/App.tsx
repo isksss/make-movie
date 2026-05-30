@@ -25,14 +25,14 @@ import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
-import type { AssetKind, ProjectState } from "../types";
+import type { AssetKind, PluginDeclaration, ProjectState } from "../types";
 import { messages, optionLabels } from "./i18n";
 import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
 
 const defaultProjectPath = "mm.toml";
 const defaultImportPath = "media/image/import.png";
-const plugins = ["VOICEVOX", "AivisSpeech", "Template Pack"] as const;
+const fallbackPlugins = ["VOICEVOX", "AivisSpeech", "Template Pack"] as const;
 const textAlignOptions = ["left", "center", "right"] as const;
 const maskOptions = ["none", "circle", "rounded_rect", "ellipse", "svg"] as const;
 const fitOptions = ["none", "contain", "cover", "stretch", "blur_background"] as const;
@@ -113,6 +113,8 @@ export function App() {
   const selectedTransition = selectedLayer ? layerTransition(selectedLayer.transition) : null;
   const selectedEffect = selectedLayer ? layerEffect(selectedLayer.effects[0]) : null;
   const selectedAnimation = selectedLayer ? layerAnimation(selectedLayer.animations[0]) : null;
+  const pluginNames =
+    project.plugins.length > 0 ? project.plugins.map(pluginDisplayName) : [...fallbackPlugins];
   const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
     try {
       await action();
@@ -1060,7 +1062,7 @@ export function App() {
             <span>{t.plugins}</span>
           </div>
           <div className="plugin-list">
-            {plugins.map((pluginName) => (
+            {pluginNames.map((pluginName) => (
               <div className="plugin-row" key={pluginName}>
                 <span>{pluginName}</span>
                 <div className="plugin-actions">
@@ -1145,4 +1147,29 @@ function inferAssetKind(sourcePath: string): AssetKind {
   if (extension && ["ttf", "otf", "woff", "woff2"].includes(extension)) return "font";
   if (extension && ["svg"].includes(extension)) return "mask";
   return "image";
+}
+
+function pluginDisplayName(plugin: PluginDeclaration): string {
+  if ((plugin.repository === "github" || plugin.repository === "gitlab") && plugin.repo) {
+    return plugin.repo;
+  }
+  if (plugin.repository === "url" && plugin.url) {
+    return (
+      plugin.url
+        .split(/[?#]/)[0]
+        ?.split("/")
+        .pop()
+        ?.replace(/\.wasm$/i, "") || plugin.url
+    );
+  }
+  if (plugin.repository === "local" && plugin.path) {
+    return (
+      plugin.path
+        .split(/[\\/]/)
+        .filter(Boolean)
+        .pop()
+        ?.replace(/\.wasm$/i, "") || plugin.path
+    );
+  }
+  return plugin.repository;
 }
