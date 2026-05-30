@@ -1,4 +1,4 @@
-import { cropRect, layerTransform, layerTransition } from "../types";
+import { cropRect, layerTransform, layerTransition, textLayerStyle } from "../types";
 import type {
   Asset,
   AssetKind,
@@ -22,6 +22,8 @@ type Section =
   | "track"
   | "layer"
   | "content"
+  | "textStroke"
+  | "textShadow"
   | "transform";
 
 export function serializeProjectToToml(project: ProjectState): string {
@@ -139,6 +141,14 @@ export function parseProjectToml(
       section = "content";
       continue;
     }
+    if (line === "[tracks.layers.content.stroke]") {
+      section = "textStroke";
+      continue;
+    }
+    if (line === "[tracks.layers.content.shadow]") {
+      section = "textShadow";
+      continue;
+    }
     if (line === "[tracks.layers.transform]") {
       section = "transform";
       continue;
@@ -212,7 +222,34 @@ function appendLayer(lines: string[], project: ProjectState, layer: TimelineLaye
 
 function appendContent(lines: string[], project: ProjectState, layer: TimelineLayer) {
   if (layer.contentKind === "text") {
-    lines.push(`text = ${quote(layer.label)}`);
+    lines.push(
+      `text = ${quote(layer.text.text || layer.label)}`,
+      `font_size = ${layer.text.fontSize}`,
+      `color = ${quote(layer.text.color)}`,
+      `letter_spacing = ${layer.text.letterSpacing}`,
+      `line_spacing = ${layer.text.lineSpacing}`,
+      `align = ${quote(layer.text.align)}`,
+    );
+    if (layer.text.stroke.width > 0) {
+      lines.push(
+        "[tracks.layers.content.stroke]",
+        `color = ${quote(layer.text.stroke.color)}`,
+        `width = ${layer.text.stroke.width}`,
+      );
+    }
+    if (
+      layer.text.shadow.offsetX !== 0 ||
+      layer.text.shadow.offsetY !== 0 ||
+      layer.text.shadow.blur > 0
+    ) {
+      lines.push(
+        "[tracks.layers.content.shadow]",
+        `color = ${quote(layer.text.shadow.color)}`,
+        `offset_x = ${layer.text.shadow.offsetX}`,
+        `offset_y = ${layer.text.shadow.offsetY}`,
+        `blur = ${layer.text.shadow.blur}`,
+      );
+    }
     return;
   }
   if (layer.contentKind === "voice") {
@@ -354,6 +391,10 @@ function assignValue(
     assignLayer(currentLayer, currentTrack?.id ?? currentLayer.trackId, key, value);
   } else if (section === "content" && currentLayer) {
     assignContent(currentLayer, key, value);
+  } else if (section === "textStroke" && currentLayer) {
+    assignTextStroke(currentLayer, key, value);
+  } else if (section === "textShadow" && currentLayer) {
+    assignTextShadow(currentLayer, key, value);
   } else if (section === "transform" && currentLayer) {
     currentLayer.transform = {
       ...currentLayer.transform,
@@ -424,14 +465,50 @@ function assignLayer(layer: TimelineLayer, trackId: string, key: string, value: 
 function assignContent(layer: TimelineLayer, key: string, value: string | number) {
   if (key === "type") {
     layer.contentKind = String(value) as TimelineLayer["contentKind"];
-  } else if (key === "text" && layer.label === layer.id) {
-    layer.label = String(value);
+  } else if (key === "text") {
+    layer.text = { ...layer.text, text: String(value) };
+    if (layer.label === layer.id || layer.contentKind === "text") {
+      layer.label = String(value);
+    }
+  } else if (key === "font_size") {
+    layer.text = { ...layer.text, fontSize: Number(value) };
+  } else if (key === "color") {
+    layer.text = { ...layer.text, color: String(value) };
+  } else if (key === "letter_spacing") {
+    layer.text = { ...layer.text, letterSpacing: Number(value) };
+  } else if (key === "line_spacing") {
+    layer.text = { ...layer.text, lineSpacing: Number(value) };
+  } else if (key === "align") {
+    const align = String(value);
+    if (align === "left" || align === "center" || align === "right") {
+      layer.text = { ...layer.text, align };
+    }
   } else if (key === "fit") {
     layer.fit = String(value) as FitMode;
   } else if (key === "trim_start") {
     layer.trimStart = parseTrimValue(layer, value);
   } else if (key === "trim_end") {
     layer.trimEnd = parseTrimValue(layer, value);
+  }
+}
+
+function assignTextStroke(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "color") {
+    layer.text = { ...layer.text, stroke: { ...layer.text.stroke, color: String(value) } };
+  } else if (key === "width") {
+    layer.text = { ...layer.text, stroke: { ...layer.text.stroke, width: Number(value) } };
+  }
+}
+
+function assignTextShadow(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "color") {
+    layer.text = { ...layer.text, shadow: { ...layer.text.shadow, color: String(value) } };
+  } else if (key === "offset_x") {
+    layer.text = { ...layer.text, shadow: { ...layer.text.shadow, offsetX: Number(value) } };
+  } else if (key === "offset_y") {
+    layer.text = { ...layer.text, shadow: { ...layer.text.shadow, offsetY: Number(value) } };
+  } else if (key === "blur") {
+    layer.text = { ...layer.text, shadow: { ...layer.text.shadow, blur: Number(value) } };
   }
 }
 
@@ -455,6 +532,7 @@ function defaultLayer(trackId: string): TimelineLayer {
     crop: cropRect(),
     mask: "none",
     fit: "none",
+    text: textLayerStyle(),
     transition: layerTransition(),
     effects: [],
     animations: [],
