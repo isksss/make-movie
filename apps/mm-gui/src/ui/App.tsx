@@ -78,7 +78,7 @@ export function App() {
     <div className="app-shell">
       <header className="menu-bar">
         <div className="brand">make-movie</div>
-        <div className="toolbar" aria-label="Project toolbar">
+        <div className="toolbar" aria-label={t.projectToolbar}>
           <button
             onClick={() =>
               runCommand(async () => {
@@ -86,7 +86,7 @@ export function App() {
                 setProject(parseProjectToml(toml, project));
               }, t.opened)
             }
-            title="Open project"
+            title={t.openProject}
           >
             <FolderOpen size={18} />
           </button>
@@ -97,7 +97,7 @@ export function App() {
                 t.saved,
               )
             }
-            title="Save project"
+            title={t.saveProject}
           >
             <Save size={18} />
           </button>
@@ -108,20 +108,20 @@ export function App() {
                 t.imported,
               )
             }
-            title="Import asset"
+            title={t.importAsset}
           >
             <Import size={18} />
           </button>
           <button
             onClick={() => runCommand(() => commands.buildProject(defaultProjectPath), t.built)}
-            title="Build movie"
+            title={t.buildMovie}
           >
             <Wand2 size={18} />
           </button>
-          <button disabled={!canUndo} onClick={undo} title="Undo">
+          <button disabled={!canUndo} onClick={undo} title={t.undo}>
             <Undo2 size={18} />
           </button>
-          <button disabled={!canRedo} onClick={redo} title="Redo">
+          <button disabled={!canRedo} onClick={redo} title={t.redo}>
             <Redo2 size={18} />
           </button>
         </div>
@@ -131,7 +131,7 @@ export function App() {
         <label className="language-select">
           {t.language}
           <select
-            aria-label="Language"
+            aria-label={t.language}
             onChange={(event) => {
               const nextLocale = event.target.value as Locale;
               setLocale(nextLocale);
@@ -146,7 +146,7 @@ export function App() {
       </header>
 
       <main className="workspace">
-        <section className="assets-pane" aria-label="Assets">
+        <section className="assets-pane" aria-label={t.assets}>
           <div className="pane-heading">
             <Box size={16} />
             <span>{t.assets}</span>
@@ -165,28 +165,28 @@ export function App() {
           </div>
         </section>
 
-        <section className="preview-pane" aria-label="Preview">
+        <section className="preview-pane" aria-label={t.preview}>
           <div className="preview-surface">
-            <PreviewCanvas project={project} preview={preview} />
+            <PreviewCanvas ariaLabel={t.renderedPreview} project={project} preview={preview} />
           </div>
           <div className="preview-controls">
             <button
-              title="Previous frame"
+              title={t.previousFrame}
               onClick={() => preview.stepFrame(project.settings.fps, -1)}
             >
               <SkipBack size={18} />
             </button>
             <button
-              title={preview.playing ? "Stop" : "Play"}
+              title={preview.playing ? t.stop : t.play}
               onClick={preview.playing ? preview.stop : preview.play}
             >
               {preview.playing ? <Pause size={18} /> : <Play size={18} />}
             </button>
-            <button title="Next frame" onClick={() => preview.stepFrame(project.settings.fps, 1)}>
+            <button title={t.nextFrame} onClick={() => preview.stepFrame(project.settings.fps, 1)}>
               <SkipForward size={18} />
             </button>
             <input
-              aria-label="Seek"
+              aria-label={t.seek}
               max={project.settings.duration}
               min={0}
               onChange={(event) => preview.seek(Number(event.target.value))}
@@ -195,7 +195,7 @@ export function App() {
               value={preview.currentTime}
             />
             <select
-              aria-label="Playback rate"
+              aria-label={t.playbackRate}
               onChange={(event) => preview.setRate(Number(event.target.value))}
               value={preview.playbackRate}
             >
@@ -207,7 +207,7 @@ export function App() {
           </div>
         </section>
 
-        <section className="property-pane" aria-label="Property">
+        <section className="property-pane" aria-label={t.property}>
           <div className="pane-heading">
             <Settings size={16} />
             <span>{t.property}</span>
@@ -261,7 +261,7 @@ export function App() {
                     />
                   </label>
                   <label>
-                    Width
+                    {t.width}
                     <input
                       min={0}
                       onChange={(event) =>
@@ -275,7 +275,7 @@ export function App() {
                     />
                   </label>
                   <label>
-                    Height
+                    {t.height}
                     <input
                       min={0}
                       onChange={(event) =>
@@ -289,7 +289,7 @@ export function App() {
                     />
                   </label>
                   <label>
-                    Scale
+                    {t.scale}
                     <input
                       min={0.01}
                       onChange={(event) =>
@@ -303,7 +303,7 @@ export function App() {
                     />
                   </label>
                   <label>
-                    Rotation
+                    {t.rotation}
                     <input
                       onChange={(event) =>
                         updateLayerTransform(selectedLayer.id, {
@@ -316,7 +316,7 @@ export function App() {
                     />
                   </label>
                   <label>
-                    Opacity
+                    {t.opacity}
                     <input
                       max={1}
                       min={0}
@@ -333,7 +333,7 @@ export function App() {
                   {selectedCrop ? (
                     <>
                       <label>
-                        Crop X
+                        {t.cropX}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -347,7 +347,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Crop Y
+                        {t.cropY}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -361,7 +361,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Crop Width
+                        {t.cropWidth}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -375,7 +375,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Crop Height
+                        {t.cropHeight}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -391,7 +391,7 @@ export function App() {
                     </>
                   ) : null}
                   <label>
-                    Mask
+                    {t.mask}
                     <select
                       onChange={(event) =>
                         updateLayerVisual(selectedLayer.id, {
@@ -407,7 +407,7 @@ export function App() {
                     </select>
                   </label>
                   <label>
-                    Fit
+                    {t.fit}
                     <select
                       onChange={(event) =>
                         updateLayerVisual(selectedLayer.id, {
@@ -515,7 +515,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Effect X
+                        {t.effectX}
                         <input
                           onChange={(event) =>
                             updateLayerEffect(selectedLayer.id, {
@@ -528,7 +528,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Effect Y
+                        {t.effectY}
                         <input
                           onChange={(event) =>
                             updateLayerEffect(selectedLayer.id, {
@@ -586,7 +586,7 @@ export function App() {
                         </select>
                       </label>
                       <label>
-                        Keyframe 1 Time
+                        {t.keyframe1Time}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -606,7 +606,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Keyframe 1 Value
+                        {t.keyframe1Value}
                         <input
                           onChange={(event) =>
                             updateLayerAnimation(selectedLayer.id, {
@@ -625,7 +625,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Keyframe 2 Time
+                        {t.keyframe2Time}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -645,7 +645,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Keyframe 2 Value
+                        {t.keyframe2Value}
                         <input
                           onChange={(event) =>
                             updateLayerAnimation(selectedLayer.id, {
@@ -681,26 +681,26 @@ export function App() {
           </div>
         </section>
 
-        <section className="timeline-pane" aria-label="Timeline">
+        <section className="timeline-pane" aria-label={t.timeline}>
           <div className="timeline-toolbar">
             <button
               disabled={!selectedLayer}
               onClick={() => selectedLayer && splitLayer(selectedLayer.id, preview.currentTime)}
-              title="Cut"
+              title={t.cut}
             >
               <Scissors size={18} />
             </button>
             <button
               disabled={!selectedLayer}
               onClick={() => selectedLayer && duplicateLayer(selectedLayer.id)}
-              title="Duplicate"
+              title={t.duplicate}
             >
               <Copy size={18} />
             </button>
             <button
               disabled={!selectedLayer}
               onClick={() => selectedLayer && deleteLayer(selectedLayer.id)}
-              title="Delete"
+              title={t.delete}
             >
               <Trash2 size={18} />
             </button>
@@ -732,7 +732,7 @@ export function App() {
           </div>
         </section>
 
-        <section className="plugin-pane" aria-label="Plugin Manager">
+        <section className="plugin-pane" aria-label={t.pluginManager}>
           <div className="pane-heading">
             <Wand2 size={16} />
             <span>{t.plugins}</span>
