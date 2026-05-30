@@ -2,19 +2,19 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 async function useEnglish(page: Page) {
-  await page.getByLabel("Language").selectOption("en");
+  await page.getByRole("combobox", { name: /^(言語|Language)$/ }).selectOption("en");
 }
 
 test("主要ペインとプレビュー描画を確認できる", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByText("make-movie")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Assets" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Preview" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Property" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "アセット" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "プレビュー" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "プロパティ" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "タイムライン" })).toBeVisible();
 
-  const canvas = page.getByLabel("Rendered preview");
+  const canvas = page.getByLabel("レンダリングプレビュー");
   await expect(canvas).toBeVisible();
   await expect
     .poll(async () =>
@@ -47,7 +47,7 @@ test("Languageで日本語と英語を切り替えられる", async ({ page }) =
   await expect(page.getByText("Assets")).toBeVisible();
   await expect(page.getByText("Property", { exact: true })).toBeVisible();
 
-  await page.getByLabel("Language").selectOption("ja");
+  await page.getByRole("combobox", { name: "Language" }).selectOption("ja");
   await expect(page.getByText("アセット")).toBeVisible();
   await expect(page.getByText("プロパティ")).toBeVisible();
 });
