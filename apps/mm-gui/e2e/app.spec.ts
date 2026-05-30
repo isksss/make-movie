@@ -49,3 +49,20 @@ test("プレビュー操作とタイムライン選択がUIに反映される", 
   await page.getByLabel("Playback rate").selectOption("2");
   await expect(page.getByLabel("Playback rate")).toHaveValue("2");
 });
+
+test("プロパティ編集をUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  await page.getByLabel("Start").fill("1.2");
+  await expect(page.getByLabel("Start")).toHaveValue("1.2");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByLabel("Start")).toHaveValue("0.5");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByLabel("Start")).toHaveValue("1.2");
+});

@@ -1,17 +1,28 @@
 import { create } from "zustand";
 import type { Asset, ProjectState, TimelineLayer, TtsState } from "../types";
 
+interface ProjectSnapshot {
+  project: ProjectState;
+  tts: TtsState;
+}
+
 interface ProjectStore {
   project: ProjectState;
   selectedLayerId: string | null;
   selectedAssetId: string | null;
   tts: TtsState;
+  past: ProjectSnapshot[];
+  future: ProjectSnapshot[];
+  canUndo: boolean;
+  canRedo: boolean;
   setProject: (project: ProjectState) => void;
   selectLayer: (id: string) => void;
   selectAsset: (id: string) => void;
   moveLayer: (id: string, start: number) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 export const initialProject: ProjectState = {
@@ -77,6 +88,25 @@ export const initialProject: ProjectState = {
   ],
 };
 
+const snapshot = (state: Pick<ProjectStore, "project" | "tts">): ProjectSnapshot => ({
+  project: structuredClone(state.project),
+  tts: structuredClone(state.tts),
+});
+
+function withHistory(
+  state: ProjectStore,
+  update: (state: ProjectStore) => Pick<ProjectStore, "project"> | Pick<ProjectStore, "tts">,
+) {
+  const next = update(state);
+  return {
+    ...next,
+    past: [...state.past, snapshot(state)],
+    future: [],
+    canUndo: true,
+    canRedo: false,
+  };
+}
+
 export const useProjectStore = create<ProjectStore>((set) => ({
   project: initialProject,
   selectedLayerId: "title",
@@ -88,22 +118,72 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     pitch: 0,
     emotion: "neutral",
   },
-  setProject: (project) => set({ project }),
+  past: [],
+  future: [],
+  canUndo: false,
+  canRedo: false,
+  setProject: (project) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project,
+      })),
+    ),
   selectLayer: (id) => set({ selectedLayerId: id }),
   selectAsset: (id) => set({ selectedAssetId: id }),
   moveLayer: (id, start) =>
-    set((state) => ({
-      project: {
-        ...state.project,
-        layers: state.project.layers.map(
-          (layer): TimelineLayer => (layer.id === id ? { ...layer, start } : layer),
-        ),
-      },
-    })),
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map(
+            (layer): TimelineLayer => (layer.id === id ? { ...layer, start } : layer),
+          ),
+        },
+      })),
+    ),
   addAsset: (asset) =>
     set((state) => ({
-      project: { ...state.project, assets: [...state.project.assets, asset] },
+      ...withHistory(state, () => ({
+        project: { ...state.project, assets: [...state.project.assets, asset] },
+      })),
       selectedAssetId: asset.id,
     })),
-  updateTtsText: (text) => set((state) => ({ tts: { ...state.tts, text } })),
+  updateTtsText: (text) =>
+    set((state) =>
+      withHistory(state, () => ({
+        tts: { ...state.tts, text },
+      })),
+    ),
+  undo: () =>
+    set((state) => {
+      const previous = state.past.at(-1);
+      if (!previous) {
+        return {};
+      }
+      const past = state.past.slice(0, -1);
+      return {
+        project: previous.project,
+        tts: previous.tts,
+        past,
+        future: [snapshot(state), ...state.future],
+        canUndo: past.length > 0,
+        canRedo: true,
+      };
+    }),
+  redo: () =>
+    set((state) => {
+      const next = state.future[0];
+      if (!next) {
+        return {};
+      }
+      const future = state.future.slice(1);
+      return {
+        project: next.project,
+        tts: next.tts,
+        past: [...state.past, snapshot(state)],
+        future,
+        canUndo: true,
+        canRedo: future.length > 0,
+      };
+    }),
 }));
