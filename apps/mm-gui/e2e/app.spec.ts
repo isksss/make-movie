@@ -313,14 +313,52 @@ test("PropertyからTransitionを編集しUndo/Redoできる", async ({ page }) 
     name: "Transition Duration",
     exact: true,
   });
+  const wipeShape = page.getByRole("combobox", { name: "Wipe Shape", exact: true });
+  const wipeRadius = page.getByRole("spinbutton", { name: "Wipe Radius", exact: true });
+  const wipeBorderWidth = page.getByRole("spinbutton", {
+    name: "Wipe Border Width",
+    exact: true,
+  });
+  const wipeShadowX = page.getByRole("spinbutton", { name: "Wipe Shadow X", exact: true });
+  const wipeShadowY = page.getByRole("spinbutton", { name: "Wipe Shadow Y", exact: true });
+  const wipeShadowBlur = page.getByRole("spinbutton", {
+    name: "Wipe Shadow Blur",
+    exact: true,
+  });
   await expect(transition).toHaveValue("none");
 
   await transition.selectOption("wipe");
   await transitionDuration.fill("1.2");
+  await wipeShape.selectOption("rounded_rect");
+  await wipeRadius.fill("28");
+  await wipeBorderWidth.fill("3");
+  await wipeShadowX.fill("4");
+  await wipeShadowY.fill("5");
+  await wipeShadowBlur.fill("6");
   await expect(transition).toHaveValue("wipe");
   await expect(transitionDuration).toHaveValue("1.2");
+  await expect(wipeShape).toHaveValue("rounded_rect");
+  await expect(wipeRadius).toHaveValue("28");
+  await expect(wipeBorderWidth).toHaveValue("3");
+  await expect(wipeShadowX).toHaveValue("4");
+  await expect(wipeShadowY).toHaveValue("5");
+  await expect(wipeShadowBlur).toHaveValue("6");
 
   await page.getByRole("button", { name: "Undo" }).click();
+  await expect(wipeShadowBlur).toHaveValue("0");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(wipeShadowY).toHaveValue("0");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(wipeShadowY).toHaveValue("5");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(wipeShadowBlur).toHaveValue("6");
+
+  for (let index = 0; index < 7; index += 1) {
+    await page.getByRole("button", { name: "Undo" }).click();
+  }
   await expect(transitionDuration).toHaveValue("0.5");
 
   await page.getByRole("button", { name: "Undo" }).click();
