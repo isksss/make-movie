@@ -17,7 +17,18 @@ describe("projectToml", () => {
           contentKind: "video",
           trimStart: 0.2,
           trimEnd: 0.8,
-          transition: { kind: "wipe", duration: 1.2 },
+          transition: {
+            kind: "wipe",
+            duration: 1.2,
+            wipeShape: "rounded_rect",
+            wipeRadius: 28,
+            wipeBorderColor: "#ff0000",
+            wipeBorderWidth: 3,
+            wipeShadowColor: "#0000ff",
+            wipeShadowOffsetX: 4,
+            wipeShadowOffsetY: 5,
+            wipeShadowBlur: 6,
+          },
           effects: [{ kind: "blur", duration: 0.5, amount: 2, x: 0, y: 0 }],
           animations: [
             {
@@ -46,6 +57,17 @@ describe("projectToml", () => {
     expect(toml).toContain("[tracks.layers.transform]");
     expect(toml).toContain("[tracks.layers.transition]");
     expect(toml).toContain('type = "wipe"');
+    expect(toml).toContain("[tracks.layers.transition.shape]");
+    expect(toml).toContain('type = "rounded_rect"');
+    expect(toml).toContain("radius = 28");
+    expect(toml).toContain("[tracks.layers.transition.shape.border]");
+    expect(toml).toContain('color = "#ff0000"');
+    expect(toml).toContain("width = 3");
+    expect(toml).toContain("[tracks.layers.transition.shape.shadow]");
+    expect(toml).toContain('color = "#0000ff"');
+    expect(toml).toContain("offset_x = 4");
+    expect(toml).toContain("offset_y = 5");
+    expect(toml).toContain("blur = 6");
     expect(toml).toContain("[[tracks.layers.effects]]");
     expect(toml).toContain("[[tracks.layers.animations.keyframes]]");
   });
@@ -475,6 +497,74 @@ opacity = 1
       align: "right",
       stroke: { color: "#111111", width: 3 },
       shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+    });
+  });
+
+  it("Wipe transitionの角丸、枠線、影をTOMLからparseできる", () => {
+    const parsed = parseProjectToml(`
+[settings]
+title = "Transition"
+width = 1280
+height = 720
+fps = 30
+sample_rate = 48000
+duration = 3
+output = "output/transition.mp4"
+
+[[tracks]]
+id = "v1"
+name = "V1"
+kind = "video"
+
+[[tracks.layers]]
+id = "intro"
+label = "Intro"
+start = 0
+duration = 3
+z_index = 1
+
+[tracks.layers.content]
+type = "image"
+
+[tracks.layers.transform]
+x = 0
+y = 0
+width = 320
+height = 180
+scale = 1
+rotation = 0
+opacity = 1
+
+[tracks.layers.transition]
+type = "wipe"
+duration = 1.2
+
+[tracks.layers.transition.shape]
+type = "rounded_rect"
+radius = 28
+
+[tracks.layers.transition.shape.border]
+color = "#ff0000"
+width = 3
+
+[tracks.layers.transition.shape.shadow]
+color = "#0000ff"
+offset_x = 4
+offset_y = 5
+blur = 6
+`);
+
+    expect(parsed.layers[0].transition).toMatchObject({
+      kind: "wipe",
+      duration: 1.2,
+      wipeShape: "rounded_rect",
+      wipeRadius: 28,
+      wipeBorderColor: "#ff0000",
+      wipeBorderWidth: 3,
+      wipeShadowColor: "#0000ff",
+      wipeShadowOffsetX: 4,
+      wipeShadowOffsetY: 5,
+      wipeShadowBlur: 6,
     });
   });
 
