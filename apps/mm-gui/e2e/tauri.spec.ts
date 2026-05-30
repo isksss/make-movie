@@ -81,17 +81,17 @@ test.beforeEach(async ({ page }) => {
 test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Open project" }).click();
+  await page.getByRole("button", { name: "プロジェクトを開く" }).click();
   await expect(page.getByText("プロジェクトを開きました")).toBeVisible();
   await expect(page.getByRole("button", { name: "Hero Layer" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Save project" }).click();
+  await page.getByRole("button", { name: "プロジェクトを保存" }).click();
   await expect(page.getByText("プロジェクトを保存しました")).toBeVisible();
 
-  await page.getByRole("button", { name: "Import asset" }).click();
+  await page.getByRole("button", { name: "アセット取り込み" }).click();
   await expect(page.getByText("アセットを取り込みました")).toBeVisible();
 
-  await page.getByRole("button", { name: "Build movie" }).click();
+  await page.getByRole("button", { name: "動画書き出し" }).click();
   await expect(page.getByText("動画を書き出しました")).toBeVisible();
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);

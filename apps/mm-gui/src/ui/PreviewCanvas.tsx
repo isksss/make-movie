@@ -3,11 +3,12 @@ import type { PreviewState, ProjectState } from "../types";
 import { drawPreviewFrame } from "./previewRenderer";
 
 interface PreviewCanvasProps {
+  ariaLabel: string;
   project: ProjectState;
   preview: PreviewState;
 }
 
-export function PreviewCanvas({ project, preview }: PreviewCanvasProps) {
+export function PreviewCanvas({ ariaLabel, project, preview }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -27,5 +28,5 @@ export function PreviewCanvas({ project, preview }: PreviewCanvasProps) {
     drawPreviewFrame(context, project, preview);
   }, [project, preview]);
 
-  return <canvas aria-label="Rendered preview" className="preview-canvas" ref={canvasRef} />;
+  return <canvas aria-label={ariaLabel} className="preview-canvas" ref={canvasRef} />;
 }
