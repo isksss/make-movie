@@ -197,6 +197,7 @@ function appendContent(lines: string[], project: ProjectState, layer: TimelineLa
   if (asset) {
     lines.push(`asset_id = ${quote(asset.id)}`);
   }
+  appendTrim(lines, layer);
   if (layer.contentKind === "image" || layer.contentKind === "video") {
     if (layer.fit !== "none") {
       lines.push(`fit = ${quote(layer.fit)}`);
@@ -217,6 +218,24 @@ function appendContent(lines: string[], project: ProjectState, layer: TimelineLa
       lines.push("radius = 16");
     }
   }
+}
+
+function appendTrim(lines: string[], layer: TimelineLayer) {
+  if (layer.contentKind !== "video" && layer.contentKind !== "audio") {
+    return;
+  }
+  const trimStart = Math.max(0, layer.trimStart);
+  const trimEnd = Math.max(0, layer.trimEnd);
+  if (trimStart > 0) {
+    lines.push(`trim_start = ${trimValue(layer, trimStart)}`);
+  }
+  if (trimEnd > 0) {
+    lines.push(`trim_end = ${trimValue(layer, trimEnd)}`);
+  }
+}
+
+function trimValue(layer: TimelineLayer, seconds: number) {
+  return layer.contentKind === "audio" ? Math.round(seconds * 1000) : seconds;
 }
 
 function appendEffects(lines: string[], effects: LayerEffect[]) {
@@ -345,7 +364,16 @@ function assignContent(layer: TimelineLayer, key: string, value: string | number
     layer.label = String(value);
   } else if (key === "fit") {
     layer.fit = String(value) as FitMode;
+  } else if (key === "trim_start") {
+    layer.trimStart = parseTrimValue(layer, value);
+  } else if (key === "trim_end") {
+    layer.trimEnd = parseTrimValue(layer, value);
   }
+}
+
+function parseTrimValue(layer: TimelineLayer, value: string | number) {
+  const number = Number(value);
+  return layer.contentKind === "audio" ? number / 1000 : number;
 }
 
 function defaultLayer(trackId: string): TimelineLayer {
@@ -356,6 +384,8 @@ function defaultLayer(trackId: string): TimelineLayer {
     contentKind: "image",
     start: 0,
     duration: 1,
+    trimStart: 0,
+    trimEnd: 0,
     zIndex: 0,
     transform: layerTransform(),
     crop: cropRect(),

@@ -43,6 +43,7 @@ export function App() {
     splitLayer,
     duplicateLayer,
     deleteLayer,
+    updateLayerTrim,
     updateLayerTransform,
     updateLayerVisual,
     updateLayerTransition,
@@ -256,6 +257,38 @@ export function App() {
                 Z
                 <input readOnly value={selectedLayer.zIndex} />
               </label>
+              {selectedLayer.contentKind === "video" || selectedLayer.contentKind === "audio" ? (
+                <>
+                  <label>
+                    {t.trimStart}
+                    <input
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerTrim(selectedLayer.id, {
+                          trimStart: Number(event.target.value),
+                        })
+                      }
+                      step={0.1}
+                      type="number"
+                      value={selectedLayer.trimStart}
+                    />
+                  </label>
+                  <label>
+                    {t.trimEnd}
+                    <input
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerTrim(selectedLayer.id, {
+                          trimEnd: Number(event.target.value),
+                        })
+                      }
+                      step={0.1}
+                      type="number"
+                      value={selectedLayer.trimEnd}
+                    />
+                  </label>
+                </>
+              ) : null}
               {selectedTransform ? (
                 <>
                   <label>

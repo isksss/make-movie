@@ -9,6 +9,9 @@ describe("projectToml", () => {
       layers: [
         {
           ...initialProject.layers[1],
+          contentKind: "video",
+          trimStart: 0.2,
+          trimEnd: 0.8,
           transition: { kind: "wipe", duration: 1.2 },
           effects: [{ kind: "blur", duration: 0.5, amount: 2, x: 0, y: 0 }],
           animations: [
@@ -30,7 +33,9 @@ describe("projectToml", () => {
     expect(toml).toContain('name = "Intro"');
     expect(toml).toContain("[[tracks]]");
     expect(toml).toContain("[[tracks.layers]]");
-    expect(toml).toContain('[tracks.layers.content]\ntype = "image"');
+    expect(toml).toContain('[tracks.layers.content]\ntype = "video"');
+    expect(toml).toContain("trim_start = 0.2");
+    expect(toml).toContain("trim_end = 0.8");
     expect(toml).toContain("[tracks.layers.transform]");
     expect(toml).toContain("[tracks.layers.transition]");
     expect(toml).toContain('type = "wipe"');
@@ -51,8 +56,8 @@ output = "output/loaded.mp4"
 
 [[assets]]
 id = "hero"
-kind = "image"
-path = "media/image/hero.png"
+kind = "video"
+path = "media/video/hero.mp4"
 
 [[scenes]]
 id = "scene-1"
@@ -73,9 +78,11 @@ duration = 5
 z_index = 2
 
 [tracks.layers.content]
-type = "image"
+type = "video"
 asset_id = "hero"
 fit = "cover"
+trim_start = 2
+trim_end = 4
 
 [tracks.layers.transform]
 x = 10
@@ -91,8 +98,8 @@ opacity = 1
     expect(parsed.settings.sampleRate).toBe(44100);
     expect(parsed.assets[0]).toEqual({
       id: "hero",
-      kind: "image",
-      path: "media/image/hero.png",
+      kind: "video",
+      path: "media/video/hero.mp4",
     });
     expect(parsed.scenes[0]).toEqual({
       id: "scene-1",
@@ -105,8 +112,10 @@ opacity = 1
       id: "hero-layer",
       trackId: "v1",
       label: "Hero",
-      contentKind: "image",
+      contentKind: "video",
       fit: "cover",
+      trimStart: 2,
+      trimEnd: 4,
       start: 1,
       duration: 5,
       zIndex: 2,
@@ -127,5 +136,28 @@ output = "output/no-scenes.mp4"
 `);
 
     expect(parsed.scenes).toEqual(initialProject.scenes);
+  });
+
+  it("audio trimはCore互換のミリ秒TOMLとして往復できる", () => {
+    const toml = serializeProjectToToml({
+      ...initialProject,
+      layers: [
+        {
+          ...initialProject.layers.find((layer) => layer.id === "voice-audio")!,
+          trimStart: 0.25,
+          trimEnd: 1.5,
+        },
+      ],
+    });
+
+    expect(toml).toContain("trim_start = 250");
+    expect(toml).toContain("trim_end = 1500");
+
+    const parsed = parseProjectToml(toml);
+    expect(parsed.layers[0]).toMatchObject({
+      contentKind: "audio",
+      trimStart: 0.25,
+      trimEnd: 1.5,
+    });
   });
 });

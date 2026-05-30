@@ -202,6 +202,27 @@ describe("projectStore", () => {
     expect(layer?.fit).toBe("blur_background");
   });
 
+  it("layer trimを更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerTrim("voice-audio", {
+      trimStart: 0.25,
+      trimEnd: 1.5,
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "voice-audio");
+    expect(layer?.trimStart).toBe(0.25);
+    expect(layer?.trimEnd).toBe(1.5);
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "voice-audio");
+    expect(layer?.trimStart).toBe(0);
+    expect(layer?.trimEnd).toBe(0);
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "voice-audio");
+    expect(layer?.trimStart).toBe(0.25);
+    expect(layer?.trimEnd).toBe(1.5);
+  });
+
   it("layer transition を更新しUndo/Redoできる", () => {
     useProjectStore.getState().updateLayerTransition("intro-image", {
       kind: "wipe",
