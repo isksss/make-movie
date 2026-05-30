@@ -6,6 +6,7 @@ import type {
   MaskKind,
   TextAlignKind,
   TransitionKind,
+  TtsProviderKind,
 } from "../types";
 
 export type Locale = "ja" | "en";
@@ -65,6 +66,7 @@ export const messages = {
     maskRadius: "マスク半径",
     maskPath: "マスクパス",
     fit: "フィット",
+    provider: "プロバイダー",
     speaker: "話者",
     text: "テキスト",
     fontSize: "フォントサイズ",
@@ -152,6 +154,7 @@ export const messages = {
     maskRadius: "Mask Radius",
     maskPath: "Mask Path",
     fit: "Fit",
+    provider: "Provider",
     speaker: "Speaker",
     text: "Text",
     fontSize: "Font Size",
@@ -197,6 +200,7 @@ export const optionLabels: Record<
     effect: Record<EffectKind, string>;
     animatedProperty: Record<AnimatedProperty, string>;
     easing: Record<EasingKind, string>;
+    ttsProvider: Record<TtsProviderKind, string>;
   }
 > = {
   ja: {
@@ -260,6 +264,11 @@ export const optionLabels: Record<
       bounce: "バウンス",
       elastic: "エラスティック",
     },
+    ttsProvider: {
+      voicevox: "VOICEVOX",
+      aivis_speech: "AivisSpeech",
+      coeiro_ink: "CoeiroInk",
+    },
   },
   en: {
     textAlign: {
@@ -321,6 +330,11 @@ export const optionLabels: Record<
       ease_out_back: "Ease out back",
       bounce: "Bounce",
       elastic: "Elastic",
+    },
+    ttsProvider: {
+      voicevox: "VOICEVOX",
+      aivis_speech: "AivisSpeech",
+      coeiro_ink: "CoeiroInk",
     },
   },
 };
