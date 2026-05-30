@@ -11,9 +11,16 @@ import {
   SkipForward,
   Wand2,
 } from "lucide-react";
+import { useState } from "react";
+import { commands } from "../services/tauri";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
+import type { ProjectState } from "../types";
 import { PreviewCanvas } from "./PreviewCanvas";
+
+const defaultProjectPath = "mm.toml";
+const defaultProjectRoot = ".";
+const defaultImportPath = "media/image/import.png";
 
 export function App() {
   const {
@@ -27,26 +34,64 @@ export function App() {
     updateTtsText,
   } = useProjectStore();
   const preview = usePreviewStore();
+  const [commandStatus, setCommandStatus] = useState("Ready");
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
+  const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
+    try {
+      await action();
+      setCommandStatus(successMessage);
+    } catch (error) {
+      setCommandStatus(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   return (
     <div className="app-shell">
       <header className="menu-bar">
         <div className="brand">make-movie</div>
         <div className="toolbar" aria-label="Project toolbar">
-          <button title="Open project">
+          <button
+            onClick={() =>
+              runCommand(() => commands.loadProject(defaultProjectPath), "プロジェクトを開きました")
+            }
+            title="Open project"
+          >
             <FolderOpen size={18} />
           </button>
-          <button title="Save project">
+          <button
+            onClick={() =>
+              runCommand(
+                () => commands.saveProject(defaultProjectPath, serializeProjectForSave(project)),
+                "プロジェクトを保存しました",
+              )
+            }
+            title="Save project"
+          >
             <Save size={18} />
           </button>
-          <button title="Import asset">
+          <button
+            onClick={() =>
+              runCommand(
+                () => commands.importAsset(defaultProjectRoot, defaultImportPath, "image"),
+                "アセットを取り込みました",
+              )
+            }
+            title="Import asset"
+          >
             <Import size={18} />
           </button>
-          <button title="Build movie">
+          <button
+            onClick={() =>
+              runCommand(() => commands.buildProject(defaultProjectPath), "動画を書き出しました")
+            }
+            title="Build movie"
+          >
             <Wand2 size={18} />
           </button>
+        </div>
+        <div aria-live="polite" className="command-status">
+          {commandStatus}
         </div>
       </header>
 
@@ -200,4 +245,19 @@ export function App() {
       </main>
     </div>
   );
+}
+
+function serializeProjectForSave(project: ProjectState) {
+  return [
+    "[settings]",
+    `title = ${JSON.stringify(project.settings.title)}`,
+    `width = ${project.settings.width}`,
+    `height = ${project.settings.height}`,
+    `fps = ${project.settings.fps}`,
+    `sample_rate = ${project.settings.sampleRate}`,
+    `duration = ${project.settings.duration}`,
+    `output = ${JSON.stringify(project.settings.output)}`,
+    'asset_mode = "copy"',
+    "",
+  ].join("\n");
 }
