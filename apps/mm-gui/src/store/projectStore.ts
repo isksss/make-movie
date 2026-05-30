@@ -19,6 +19,7 @@ interface ProjectStore {
   selectLayer: (id: string) => void;
   selectAsset: (id: string) => void;
   moveLayer: (id: string, start: number) => void;
+  splitLayer: (id: string, time: number) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
   undo: () => void;
@@ -141,6 +142,39 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         },
       })),
     ),
+  splitLayer: (id, time) =>
+    set((state) => {
+      const layerIndex = state.project.layers.findIndex((layer) => layer.id === id);
+      if (layerIndex < 0) {
+        return {};
+      }
+      const layer = state.project.layers[layerIndex];
+      const end = layer.start + layer.duration;
+      if (time <= layer.start || time >= end) {
+        return {};
+      }
+      const nextId = uniqueLayerId(state.project.layers, `${layer.id}-split`);
+      const nextLabel = uniqueLayerLabel(state.project.layers, `${layer.label} (2)`);
+      const first: TimelineLayer = {
+        ...layer,
+        duration: time - layer.start,
+      };
+      const second: TimelineLayer = {
+        ...layer,
+        id: nextId,
+        label: nextLabel,
+        start: time,
+        duration: end - time,
+      };
+      const layers = [...state.project.layers];
+      layers.splice(layerIndex, 1, first, second);
+      return {
+        ...withHistory(state, () => ({
+          project: { ...state.project, layers },
+        })),
+        selectedLayerId: nextId,
+      };
+    }),
   addAsset: (asset) =>
     set((state) => ({
       ...withHistory(state, () => ({
@@ -187,3 +221,27 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       };
     }),
 }));
+
+function uniqueLayerId(layers: TimelineLayer[], base: string) {
+  if (!layers.some((layer) => layer.id === base)) {
+    return base;
+  }
+  for (let index = 2; ; index += 1) {
+    const candidate = `${base}-${index}`;
+    if (!layers.some((layer) => layer.id === candidate)) {
+      return candidate;
+    }
+  }
+}
+
+function uniqueLayerLabel(layers: TimelineLayer[], base: string) {
+  if (!layers.some((layer) => layer.label === base)) {
+    return base;
+  }
+  for (let index = 3; ; index += 1) {
+    const candidate = base.replace(/\(\d+\)$/, `(${index})`);
+    if (!layers.some((layer) => layer.label === candidate)) {
+      return candidate;
+    }
+  }
+}
