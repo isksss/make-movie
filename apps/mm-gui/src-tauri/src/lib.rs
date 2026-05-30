@@ -5,7 +5,7 @@ use mm_core::{
 use mm_plugin_runtime::{
     default_global_config_path, default_plugin_dir, PluginManager, PluginReference,
 };
-use mm_render::{render_project, RenderOptions};
+use mm_render::{render_project, BundledFfmpegLocator, FfmpegLocator, RenderOptions};
 use std::env;
 use std::path::PathBuf;
 
@@ -26,10 +26,7 @@ fn save_project(path: String, toml: String) -> Result<(), String> {
 fn build_project(path: String) -> Result<(), String> {
     let project = load_core_project(&path).map_err(|error| error.to_string())?;
     let project_path = PathBuf::from(&path);
-    let project_root = project_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
-    let options = RenderOptions::new(project_root, project.settings.output.clone());
+    let options = gui_render_options(&project_path, &project, bundled_binary_dir());
     render_project(&project, &options).map_err(|error| error.to_string())
 }
 
@@ -109,6 +106,33 @@ fn plugin_dir() -> PathBuf {
     env::var("MM_PLUGIN_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| default_plugin_dir())
+}
+
+fn gui_render_options(
+    project_path: &std::path::Path,
+    project: &mm_core::Project,
+    bundle_dir: Option<PathBuf>,
+) -> RenderOptions {
+    let project_root = project_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let mut options = RenderOptions::new(project_root, project.settings.output.clone());
+    if let Some(ffmpeg_path) = bundle_dir.and_then(|dir| bundled_ffmpeg_path(&dir, project)) {
+        options.ffmpeg_path = Some(ffmpeg_path);
+    }
+    options
+}
+
+fn bundled_binary_dir() -> Option<PathBuf> {
+    env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+}
+
+fn bundled_ffmpeg_path(bundle_dir: &std::path::Path, project: &mm_core::Project) -> Option<PathBuf> {
+    BundledFfmpegLocator::new(bundle_dir)
+        .ffmpeg_path(project)
+        .ok()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -228,6 +252,37 @@ path = "{}"
         let lock = std::fs::read_to_string(dir.path().join("mm.lock")).expect("project lock を読める");
         assert!(lock.contains("theme"));
         assert!(plugin_dir.join("theme/theme.wasm").exists());
+    }
+
+    #[test]
+    fn gui_render_options_prefers_bundled_ffmpeg() {
+        let dir = tempfile::tempdir().expect("temp dir を作成できる");
+        let bundle_dir = dir.path().join("bundle");
+        std::fs::create_dir_all(&bundle_dir).expect("bundle dir を作成できる");
+        let bundled_ffmpeg = bundle_dir.join("ffmpeg");
+        std::fs::write(&bundled_ffmpeg, []).expect("同梱 ffmpeg を書ける");
+        let project_path = dir.path().join("project/mm.toml");
+        let mut project: mm_core::Project =
+            toml::from_str(&sample_project_toml("Bundled")).expect("project TOML を parse できる");
+        project.settings.ffmpeg = Some(PathBuf::from("/custom/ffmpeg"));
+
+        let options = gui_render_options(&project_path, &project, Some(bundle_dir));
+
+        assert_eq!(options.project_root, dir.path().join("project"));
+        assert_eq!(options.ffmpeg_path, Some(bundled_ffmpeg));
+    }
+
+    #[test]
+    fn gui_render_options_keeps_fallback_when_bundled_ffmpeg_is_missing() {
+        let dir = tempfile::tempdir().expect("temp dir を作成できる");
+        let project_path = dir.path().join("mm.toml");
+        let mut project: mm_core::Project =
+            toml::from_str(&sample_project_toml("Fallback")).expect("project TOML を parse できる");
+        project.settings.ffmpeg = Some(PathBuf::from("/custom/ffmpeg"));
+
+        let options = gui_render_options(&project_path, &project, Some(dir.path().join("bundle")));
+
+        assert_eq!(options.ffmpeg_path, None);
     }
 
     fn sample_project_toml(title: &str) -> String {
