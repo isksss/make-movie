@@ -30,6 +30,8 @@ type Section =
   | "track"
   | "layer"
   | "content"
+  | "crop"
+  | "mask"
   | "textStroke"
   | "textShadow"
   | "transform";
@@ -150,6 +152,14 @@ export function parseProjectToml(
     }
     if (line === "[tracks.layers.content]") {
       section = "content";
+      continue;
+    }
+    if (line === "[tracks.layers.content.crop]") {
+      section = "crop";
+      continue;
+    }
+    if (line === "[tracks.layers.content.mask]") {
+      section = "mask";
       continue;
     }
     if (line === "[tracks.layers.content.stroke]") {
@@ -300,7 +310,9 @@ function appendContent(lines: string[], project: ProjectState, layer: TimelineLa
   if (layer.contentKind === "image" && layer.mask !== "none") {
     lines.push("[tracks.layers.content.mask]", `type = ${quote(layer.mask)}`);
     if (layer.mask === "rounded_rect") {
-      lines.push("radius = 16");
+      lines.push(`radius = ${layer.maskRadius ?? 16}`);
+    } else if (layer.mask === "svg" && layer.maskPath) {
+      lines.push(`path = ${quote(layer.maskPath)}`);
     }
   }
 }
@@ -405,6 +417,10 @@ function assignValue(
     assignLayer(currentLayer, currentTrack?.id ?? currentLayer.trackId, key, value);
   } else if (section === "content" && currentLayer) {
     assignContent(currentLayer, key, value);
+  } else if (section === "crop" && currentLayer) {
+    assignCrop(currentLayer, key, value);
+  } else if (section === "mask" && currentLayer) {
+    assignMask(currentLayer, key, value);
   } else if (section === "textStroke" && currentLayer) {
     assignTextStroke(currentLayer, key, value);
   } else if (section === "textShadow" && currentLayer) {
@@ -527,6 +543,30 @@ function assignContent(layer: TimelineLayer, key: string, value: string | number
   } else if (key === "trim_end") {
     layer.trimEnd = parseTrimValue(layer, value);
   }
+}
+
+function assignCrop(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "x" || key === "y" || key === "width" || key === "height") {
+    layer.crop = { ...layer.crop, [key]: Number(value) };
+  }
+}
+
+function assignMask(layer: TimelineLayer, key: string, value: string | number) {
+  if (key === "type") {
+    layer.mask = parseMaskKind(value);
+  } else if (key === "radius") {
+    layer.maskRadius = Number(value);
+  } else if (key === "path") {
+    layer.maskPath = String(value);
+  }
+}
+
+function parseMaskKind(value: string | number) {
+  const kind = String(value);
+  if (kind === "circle" || kind === "rounded_rect" || kind === "ellipse" || kind === "svg") {
+    return kind;
+  }
+  return "none";
 }
 
 function parseTtsProvider(value: string | number): TtsProviderKind {

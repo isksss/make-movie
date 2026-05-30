@@ -132,7 +132,7 @@ function drawLayers(
         (item.layer.contentKind === "audio" || item.layer.contentKind === "voice" ? 0.72 : 0.94) *
         transform.opacity;
     }
-    drawMaskedLayerShape(context, item.layer.mask, x, y, width, height);
+    drawMaskedLayerShape(context, item.layer, x, y, width, height);
     context.globalAlpha = 1;
     if (cropActive) {
       const cropX = x + Math.min(width - 8, crop.x * viewport.scale);
@@ -188,14 +188,14 @@ function drawLayers(
 
 function drawMaskedLayerShape(
   context: CanvasRenderingContext2D,
-  mask: TimelineLayer["mask"],
+  layer: TimelineLayer,
   x: number,
   y: number,
   width: number,
   height: number,
 ) {
   context.beginPath();
-  switch (mask) {
+  switch (layer.mask) {
     case "circle": {
       const radius = Math.min(width, height) / 2;
       context.ellipse(x + width / 2, y + height / 2, radius, radius, 0, 0, Math.PI * 2);
@@ -205,7 +205,17 @@ function drawMaskedLayerShape(
       context.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
       break;
     case "rounded_rect":
-      roundedRect(context, x, y, width, height, Math.min(18, width / 4, height / 4));
+      roundedRect(
+        context,
+        x,
+        y,
+        width,
+        height,
+        Math.min(layer.maskRadius ?? 18, width / 4, height / 4),
+      );
+      break;
+    case "svg":
+      roundedRect(context, x, y, width, height, 6);
       break;
     case "none":
       roundedRect(context, x, y, width, height, 6);
