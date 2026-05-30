@@ -134,7 +134,7 @@ fn doctor() -> Result<()> {
 }
 
 fn plugin(command: PluginCommand) -> Result<()> {
-    let manager = PluginManager;
+    let manager = PluginManager::default();
     match command {
         PluginCommand::Install(args) => manager.install(PluginReference::named(args.name))?,
         PluginCommand::Update(args) => manager.update(PluginReference::named(args.name))?,
