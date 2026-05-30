@@ -34,6 +34,7 @@ type Section =
   | "mask"
   | "textStroke"
   | "textShadow"
+  | "textGradient"
   | "transform"
   | "transition"
   | "transitionShape"
@@ -174,6 +175,10 @@ export function parseProjectToml(
       section = "textShadow";
       continue;
     }
+    if (line === "[tracks.layers.content.gradient]") {
+      section = "textGradient";
+      continue;
+    }
     if (line === "[tracks.layers.transform]") {
       section = "transform";
       continue;
@@ -289,6 +294,14 @@ function appendContent(lines: string[], project: ProjectState, layer: TimelineLa
         `offset_x = ${layer.text.shadow.offsetX}`,
         `offset_y = ${layer.text.shadow.offsetY}`,
         `blur = ${layer.text.shadow.blur}`,
+      );
+    }
+    if (layer.text.gradient.enabled) {
+      lines.push(
+        "[tracks.layers.content.gradient]",
+        `start_color = ${quote(layer.text.gradient.startColor)}`,
+        `end_color = ${quote(layer.text.gradient.endColor)}`,
+        `direction = ${quote(layer.text.gradient.direction)}`,
       );
     }
     return;
@@ -468,6 +481,8 @@ function assignValue(
     assignTextStroke(currentLayer, key, value);
   } else if (section === "textShadow" && currentLayer) {
     assignTextShadow(currentLayer, key, value);
+  } else if (section === "textGradient" && currentLayer) {
+    assignTextGradient(currentLayer, key, value);
   } else if (section === "transform" && currentLayer) {
     currentLayer.transform = {
       ...currentLayer.transform,
@@ -703,6 +718,18 @@ function assignTextShadow(layer: TimelineLayer, key: string, value: string | num
     layer.text = { ...layer.text, shadow: { ...layer.text.shadow, offsetY: Number(value) } };
   } else if (key === "blur") {
     layer.text = { ...layer.text, shadow: { ...layer.text.shadow, blur: Number(value) } };
+  }
+}
+
+function assignTextGradient(layer: TimelineLayer, key: string, value: string | number) {
+  const gradient = { ...layer.text.gradient, enabled: true };
+  if (key === "start_color") {
+    layer.text = { ...layer.text, gradient: { ...gradient, startColor: String(value) } };
+  } else if (key === "end_color") {
+    layer.text = { ...layer.text, gradient: { ...gradient, endColor: String(value) } };
+  } else if (key === "direction") {
+    const direction = String(value) === "horizontal" ? "horizontal" : "vertical";
+    layer.text = { ...layer.text, gradient: { ...gradient, direction } };
   }
 }
 

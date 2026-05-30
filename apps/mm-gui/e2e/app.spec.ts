@@ -130,6 +130,10 @@ test("Textレイヤーのスタイルを編集しUndo/Redoできる", async ({ p
   await property.locator("textarea").first().fill("Updated title");
   await property.getByLabel("Font Size").fill("72");
   await property.getByLabel("Text Color").fill("#ffcc00");
+  await property.getByLabel("Text Gradient").check();
+  await property.getByLabel("Start Color").fill("#ff0000");
+  await property.getByLabel("End Color").fill("#0000ff");
+  await property.getByLabel("Direction").selectOption("horizontal");
   await property.getByLabel("Text Align").selectOption("left");
   await property.getByLabel("Stroke Width").fill("3");
   await property.getByLabel("Shadow X").fill("4");
@@ -137,12 +141,15 @@ test("Textレイヤーのスタイルを編集しUndo/Redoできる", async ({ p
 
   await expect(property.getByLabel("Layer")).toHaveValue("Updated title");
   await expect(property.getByLabel("Font Size")).toHaveValue("72");
+  await expect(property.getByLabel("Direction")).toHaveValue("horizontal");
   await expect(property.getByLabel("Text Align")).toHaveValue("left");
 
   await page.getByRole("button", { name: "Undo" }).click();
+  await expect(property.getByLabel("Text Gradient")).toBeChecked();
   await expect(property.getByLabel("Shadow Blur")).toHaveValue("0");
 
   await page.getByRole("button", { name: "Redo" }).click();
+  await expect(property.getByLabel("Text Gradient")).toBeChecked();
   await expect(property.getByLabel("Shadow Blur")).toHaveValue("6");
 });
 
