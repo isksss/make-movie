@@ -44,9 +44,28 @@ corepack pnpm --dir apps/mm-gui build
 ## Tauri
 
 ```bash
+TAURI_TARGET_TRIPLE=x86_64-unknown-linux-gnu bash scripts/prepare-tauri-sidecars.sh
 cargo test --manifest-path apps/mm-gui/src-tauri/Cargo.toml
 cargo clippy --manifest-path apps/mm-gui/src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
+
+GUI bundle を作成する場合は、事前に `apps/mm-gui/src-tauri/binaries/` へ
+Tauri target triple 付きの `ffmpeg` / `ffprobe` sidecar を配置します。
+通常は次の script で現在の Rust host triple 向けに準備できます。
+
+```bash
+bash scripts/prepare-tauri-sidecars.sh
+```
+
+例:
+
+```bash
+mkdir -p apps/mm-gui/src-tauri/binaries
+cp "$(command -v ffmpeg)" apps/mm-gui/src-tauri/binaries/ffmpeg-x86_64-unknown-linux-gnu
+cp "$(command -v ffprobe)" apps/mm-gui/src-tauri/binaries/ffprobe-x86_64-unknown-linux-gnu
+```
+
+Windows target では `.exe` 付きのファイル名を使います。
 
 ## Plugin SDK
 

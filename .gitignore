@@ -10,3 +10,5 @@ apps/mm-gui/vite.config.d.ts
 apps/mm-gui/playwright-report/
 apps/mm-gui/test-results/
 apps/mm-gui/src-tauri/gen/
+apps/mm-gui/src-tauri/binaries/ffmpeg-*
+apps/mm-gui/src-tauri/binaries/ffprobe-*
