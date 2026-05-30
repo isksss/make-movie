@@ -66,6 +66,7 @@ export interface TimelineLayer {
   trackId: string;
   label: string;
   contentKind: "video" | "image" | "audio" | "text" | "subtitle" | "voice";
+  assetId: string | null;
   start: number;
   duration: number;
   trimStart: number;

@@ -207,9 +207,11 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
   ]);
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[tracks.layers]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('label = "Hero Layer"'));
+  expect(calls[1].args.toml).toEqual(expect.stringContaining('asset_id = "hero"'));
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[plugin]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('repo = "gui-theme"'));
   expect(calls[3].args.toml).toEqual(expect.stringContaining('path = "media/image/import.png"'));
+  expect(calls[3].args.toml).toEqual(expect.stringContaining('asset_id = "import"'));
 });
 
 test("Assetsペインへのdropでassetとlayerを取り込める", async ({ page }) => {
