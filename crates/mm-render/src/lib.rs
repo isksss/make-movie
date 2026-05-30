@@ -3,7 +3,7 @@ use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
     save_wav_audio, synthesize_with_default_provider, AnimatedProperty, Animation, AssetKind,
-    AudioLayer, Crop, Easing, Effect, Layer, LayerContent, Mask, Project, SubtitleLayer,
+    AudioLayer, Crop, Easing, Effect, FitMode, Layer, LayerContent, Mask, Project, SubtitleLayer,
     SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke, Transform, Transition,
     VideoLayer, VoiceLayer, WipeShape,
 };
@@ -799,7 +799,7 @@ fn draw_layer_content(
             let image = apply_crop(image, content.crop);
             let image = apply_image_effects(image, &layer.effects);
             let image = apply_mask(image, content.mask.as_ref());
-            draw_image(frame, &image, transform);
+            draw_image(frame, &image, transform, content.fit);
         }
         LayerContent::Text(content) => {
             let font = load_font(project, options, content.font_asset_id.as_deref())?;
@@ -1259,7 +1259,44 @@ fn pixelate(image: &RgbaImage, size: u32) -> RgbaImage {
     )
 }
 
-fn draw_image(frame: &mut RgbaImage, image: &RgbaImage, transform: Transform) {
+fn draw_image(
+    frame: &mut RgbaImage,
+    image: &RgbaImage,
+    transform: Transform,
+    fit: Option<FitMode>,
+) {
+    let Some(fit) = fit else {
+        draw_resized_image(frame, image, transform);
+        return;
+    };
+
+    let target_width = resolved_size(transform.width, image.width());
+    let target_height = resolved_size(transform.height, image.height());
+    let mut fitted = RgbaImage::from_pixel(target_width, target_height, Rgba([0, 0, 0, 0]));
+    match fit {
+        FitMode::Contain => draw_fit_into_canvas(&mut fitted, image, FitMode::Contain),
+        FitMode::Cover => draw_fit_into_canvas(&mut fitted, image, FitMode::Cover),
+        FitMode::Stretch => draw_fit_into_canvas(&mut fitted, image, FitMode::Stretch),
+        FitMode::BlurBackground => {
+            let mut background =
+                fit_image_to_canvas(image, target_width, target_height, FitMode::Cover);
+            background = imageops::blur(&background, 18.0);
+            alpha_blend(&mut fitted, &background, 0, 0, 1.0);
+            draw_fit_into_canvas(&mut fitted, image, FitMode::Contain);
+        }
+    }
+    let mut x = transform.x.round() as i32;
+    let mut y = transform.y.round() as i32;
+    if transform.rotation != 0.0 {
+        let rotated = rotate_image(&fitted, transform.rotation);
+        x -= (rotated.width() as i32 - fitted.width() as i32) / 2;
+        y -= (rotated.height() as i32 - fitted.height() as i32) / 2;
+        fitted = rotated;
+    }
+    alpha_blend(frame, &fitted, x, y, transform.opacity);
+}
+
+fn draw_resized_image(frame: &mut RgbaImage, image: &RgbaImage, transform: Transform) {
     let width = resolved_size(transform.width, image.width());
     let height = resolved_size(transform.height, image.height());
     let mut resized = imageops::resize(image, width, height, imageops::FilterType::Lanczos3);
@@ -1272,6 +1309,63 @@ fn draw_image(frame: &mut RgbaImage, image: &RgbaImage, transform: Transform) {
         resized = rotated;
     }
     alpha_blend(frame, &resized, x, y, transform.opacity);
+}
+
+fn draw_fit_into_canvas(canvas: &mut RgbaImage, image: &RgbaImage, fit: FitMode) {
+    let fitted = fit_image_to_canvas(image, canvas.width(), canvas.height(), fit);
+    alpha_blend(canvas, &fitted, 0, 0, 1.0);
+}
+
+fn fit_image_to_canvas(
+    image: &RgbaImage,
+    target_width: u32,
+    target_height: u32,
+    fit: FitMode,
+) -> RgbaImage {
+    let (width, height) = fit_dimensions(
+        image.width(),
+        image.height(),
+        target_width,
+        target_height,
+        fit,
+    );
+    let resized = imageops::resize(image, width, height, imageops::FilterType::Lanczos3);
+    let mut canvas = RgbaImage::from_pixel(target_width, target_height, Rgba([0, 0, 0, 0]));
+    let x = (target_width as i32 - width as i32) / 2;
+    let y = (target_height as i32 - height as i32) / 2;
+    alpha_blend(&mut canvas, &resized, x, y, 1.0);
+    canvas
+}
+
+fn fit_dimensions(
+    source_width: u32,
+    source_height: u32,
+    target_width: u32,
+    target_height: u32,
+    fit: FitMode,
+) -> (u32, u32) {
+    if source_width == 0 || source_height == 0 || target_width == 0 || target_height == 0 {
+        return (target_width.max(1), target_height.max(1));
+    }
+    match fit {
+        FitMode::Stretch => (target_width, target_height),
+        FitMode::Contain | FitMode::BlurBackground => {
+            let scale = (target_width as f32 / source_width as f32)
+                .min(target_height as f32 / source_height as f32);
+            (
+                (source_width as f32 * scale).round().max(1.0) as u32,
+                (source_height as f32 * scale).round().max(1.0) as u32,
+            )
+        }
+        FitMode::Cover => {
+            let scale = (target_width as f32 / source_width as f32)
+                .max(target_height as f32 / source_height as f32);
+            (
+                (source_width as f32 * scale).round().max(1.0) as u32,
+                (source_height as f32 * scale).round().max(1.0) as u32,
+            )
+        }
+    }
 }
 
 fn rotate_image(image: &RgbaImage, degrees: f32) -> RgbaImage {
@@ -1957,6 +2051,26 @@ mod tests {
     }
 
     #[test]
+    fn fit_dimensions_respects_modes() {
+        assert_eq!(
+            fit_dimensions(100, 50, 200, 200, FitMode::Contain),
+            (200, 100)
+        );
+        assert_eq!(
+            fit_dimensions(100, 50, 200, 200, FitMode::Cover),
+            (400, 200)
+        );
+        assert_eq!(
+            fit_dimensions(100, 50, 200, 200, FitMode::Stretch),
+            (200, 200)
+        );
+        assert_eq!(
+            fit_dimensions(100, 50, 200, 200, FitMode::BlurBackground),
+            (200, 100)
+        );
+    }
+
+    #[test]
     fn crop_mask_rotation_and_motion_blur_adjust_image() {
         let mut image = RgbaImage::from_pixel(8, 8, Rgba([0, 0, 0, 0]));
         for y in 0..8 {
@@ -1982,6 +2096,52 @@ mod tests {
         assert_eq!(blurred.get_pixel(0, 0)[3], 0);
         assert!(rotated.width() > blurred.width());
         assert!(rotated.height() > blurred.height());
+    }
+
+    #[test]
+    fn render_frame_draws_blur_background_fit_for_image() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let image_path = dir.path().join("media/image/wide.png");
+        std::fs::create_dir_all(image_path.parent().unwrap())?;
+        let mut image = RgbaImage::from_pixel(8, 4, Rgba([0, 0, 255, 255]));
+        for y in 0..4 {
+            for x in 0..4 {
+                image.put_pixel(x, y, Rgba([255, 0, 0, 255]));
+            }
+        }
+        image.save(&image_path)?;
+        let mut project = text_project();
+        project.settings.width = 32;
+        project.settings.height = 32;
+        project.assets.push(Asset {
+            id: "wide".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/wide.png"),
+        });
+        project.tracks[0].layers[0].content = LayerContent::Image(ImageLayer {
+            asset_id: "wide".to_string(),
+            crop: None,
+            mask: None,
+            fit: Some(FitMode::BlurBackground),
+        });
+        project.tracks[0].layers[0].transform = Transform {
+            x: 0.0,
+            y: 0.0,
+            width: 32.0,
+            height: 32.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame(&project, &options, 0.5)?;
+
+        assert_ne!(frame.get_pixel(0, 0), &options.background);
+        assert!(frame.get_pixel(8, 16)[0] > frame.get_pixel(8, 16)[2]);
+        assert!(frame.get_pixel(24, 16)[2] > frame.get_pixel(24, 16)[0]);
+        Ok(())
     }
 
     #[test]
