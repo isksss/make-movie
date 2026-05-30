@@ -10,7 +10,9 @@ ab_glyph.workspace = true
 anyhow.workspace = true
 image.workspace = true
 mm-core = { path = "../mm-core" }
+pollster.workspace = true
 which.workspace = true
+wgpu.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
