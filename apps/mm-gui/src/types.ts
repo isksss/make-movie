@@ -73,6 +73,7 @@ export interface Asset {
 export interface TimelineLayer {
   id: string;
   trackId: string;
+  groupId: string | null;
   label: string;
   contentKind: "video" | "image" | "audio" | "text" | "subtitle" | "voice";
   assetId: string | null;
@@ -196,12 +197,18 @@ export interface Scene {
   duration: number;
 }
 
+export interface TimelineGroup {
+  id: string;
+  name: string;
+}
+
 export interface ProjectState {
   settings: ProjectSettings;
   assets: Asset[];
   tracks: Track[];
   layers: TimelineLayer[];
   scenes: Scene[];
+  groups: TimelineGroup[];
   plugins: PluginDeclaration[];
 }
 

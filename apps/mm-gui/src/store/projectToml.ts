@@ -21,6 +21,7 @@ import type {
   PluginRepository,
   ProjectState,
   Scene,
+  TimelineGroup,
   TimelineLayer,
   Track,
   TtsProviderKind,
@@ -31,6 +32,7 @@ type Section =
   | "settings"
   | "asset"
   | "scene"
+  | "group"
   | "plugin"
   | "track"
   | "layer"
@@ -86,6 +88,10 @@ export function serializeProjectToToml(project: ProjectState): string {
     );
   }
 
+  for (const group of project.groups) {
+    lines.push("[[groups]]", `id = ${quote(group.id)}`, `name = ${quote(group.name)}`, "");
+  }
+
   for (const plugin of project.plugins) {
     appendPlugin(lines, plugin);
   }
@@ -114,12 +120,14 @@ export function parseProjectToml(
     settings: { ...fallback.settings },
     assets: [],
     scenes: [],
+    groups: [],
     plugins: [],
     tracks: [],
     layers: [],
   };
   let section: Section | null = null;
   let currentScene: Scene | null = null;
+  let currentGroup: TimelineGroup | null = null;
   let currentPlugin: PluginDeclaration | null = null;
   let currentTrack: Track | null = null;
   let currentLayer: TimelineLayer | null = null;
@@ -144,6 +152,12 @@ export function parseProjectToml(
       section = "scene";
       currentScene = { id: "", name: "", start: 0, duration: 1 };
       project.scenes.push(currentScene);
+      continue;
+    }
+    if (line === "[[groups]]") {
+      section = "group";
+      currentGroup = { id: "", name: "" };
+      project.groups.push(currentGroup);
       continue;
     }
     if (line === "[[plugin]]") {
@@ -231,6 +245,7 @@ export function parseProjectToml(
       key,
       parseTomlValue(rawValue),
       currentScene,
+      currentGroup,
       currentPlugin,
       currentTrack,
       currentLayer,
@@ -243,6 +258,7 @@ export function parseProjectToml(
     settings: project.settings,
     assets: project.assets.length > 0 ? project.assets : structuredClone(fallback.assets),
     scenes: project.scenes.length > 0 ? project.scenes : structuredClone(fallback.scenes),
+    groups: project.groups,
     plugins: project.plugins,
     tracks: project.tracks.length > 0 ? project.tracks : structuredClone(fallback.tracks),
     layers: project.layers.length > 0 ? project.layers : structuredClone(fallback.layers),
@@ -264,6 +280,7 @@ function appendLayer(lines: string[], project: ProjectState, layer: TimelineLaye
     "[[tracks.layers]]",
     `id = ${quote(layer.id)}`,
     `label = ${quote(layer.label)}`,
+    ...(layer.groupId ? [`group_id = ${quote(layer.groupId)}`] : []),
     `start = ${layer.start}`,
     `duration = ${layer.duration}`,
     `z_index = ${layer.zIndex}`,
@@ -477,6 +494,7 @@ function assignValue(
   key: string,
   value: string | number,
   currentScene: Scene | null,
+  currentGroup: TimelineGroup | null,
   currentPlugin: PluginDeclaration | null,
   currentTrack: Track | null,
   currentLayer: TimelineLayer | null,
@@ -490,6 +508,8 @@ function assignValue(
     if (asset) assignAsset(asset, key, value);
   } else if (section === "scene" && currentScene) {
     assignScene(currentScene, key, value);
+  } else if (section === "group" && currentGroup) {
+    assignGroup(currentGroup, key, value);
   } else if (section === "plugin" && currentPlugin) {
     assignPlugin(currentPlugin, key, value);
   } else if (section === "track" && currentTrack) {
@@ -551,6 +571,10 @@ function assignScene(scene: Scene, key: string, value: string | number) {
   else if (key === "start" || key === "duration") scene[key] = Number(value);
 }
 
+function assignGroup(group: TimelineGroup, key: string, value: string | number) {
+  if (key === "id" || key === "name") group[key] = String(value);
+}
+
 function assignPlugin(plugin: PluginDeclaration, key: string, value: string | number) {
   if (key === "repository") {
     plugin.repository = parsePluginRepository(value);
@@ -587,6 +611,7 @@ function assignLayer(layer: TimelineLayer, trackId: string, key: string, value: 
   layer.trackId = trackId;
   if (key === "z_index") layer.zIndex = Number(value);
   else if (key === "start" || key === "duration") layer[key] = Number(value);
+  else if (key === "group_id") layer.groupId = String(value);
   else if (key === "id") {
     layer.id = String(value);
     if (!layer.label) layer.label = layer.id;
@@ -827,6 +852,7 @@ function defaultLayer(trackId: string): TimelineLayer {
   return {
     id: "",
     trackId,
+    groupId: null,
     label: "",
     contentKind: "image",
     assetId: null,

@@ -11,9 +11,11 @@ describe("projectToml", () => {
         assetMode: "link",
         ffmpeg: "/usr/bin/ffmpeg",
       },
+      groups: [{ id: "opening", name: "Opening Group" }],
       layers: [
         {
           ...initialProject.layers[1],
+          groupId: "opening",
           contentKind: "video",
           trimStart: 0.2,
           trimEnd: 0.8,
@@ -49,8 +51,11 @@ describe("projectToml", () => {
     expect(toml).toContain('ffmpeg = "/usr/bin/ffmpeg"');
     expect(toml).toContain("[[scenes]]");
     expect(toml).toContain('name = "Intro"');
+    expect(toml).toContain("[[groups]]");
+    expect(toml).toContain('id = "opening"');
     expect(toml).toContain("[[tracks]]");
     expect(toml).toContain("[[tracks.layers]]");
+    expect(toml).toContain('group_id = "opening"');
     expect(toml).toContain('[tracks.layers.content]\ntype = "video"');
     expect(toml).toContain("trim_start = 0.2");
     expect(toml).toContain("trim_end = 0.8");
@@ -245,6 +250,10 @@ name = "Opening"
 start = 0
 duration = 6
 
+[[groups]]
+id = "opening"
+name = "Opening Group"
+
 [[plugin]]
 repository = "github"
 owner = "isksss"
@@ -263,6 +272,7 @@ kind = "video"
 [[tracks.layers]]
 id = "hero-layer"
 label = "Hero"
+group_id = "opening"
 start = 1
 duration = 5
 z_index = 2
@@ -299,6 +309,10 @@ opacity = 1
       start: 0,
       duration: 6,
     });
+    expect(parsed.groups[0]).toEqual({
+      id: "opening",
+      name: "Opening Group",
+    });
     expect(parsed.plugins).toEqual([
       {
         repository: "github",
@@ -315,6 +329,7 @@ opacity = 1
     expect(parsed.layers[0]).toMatchObject({
       id: "hero-layer",
       trackId: "v1",
+      groupId: "opening",
       label: "Hero",
       contentKind: "video",
       assetId: "hero",
