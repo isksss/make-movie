@@ -44,7 +44,7 @@ interface ProjectStore {
   updateLayerEffect: (id: string, effect: Partial<LayerEffect>) => void;
   updateLayerAnimation: (id: string, animation: Partial<LayerAnimation>) => void;
   addAsset: (asset: Asset) => void;
-  updateTtsText: (text: string) => void;
+  updateTts: (tts: Partial<TtsState>) => void;
   undo: () => void;
   redo: () => void;
 }
@@ -385,10 +385,10 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       })),
       selectedAssetId: asset.id,
     })),
-  updateTtsText: (text) =>
+  updateTts: (tts) =>
     set((state) =>
       withHistory(state, () => ({
-        tts: { ...state.tts, text },
+        tts: { ...state.tts, ...tts },
       })),
     ),
   undo: () =>
