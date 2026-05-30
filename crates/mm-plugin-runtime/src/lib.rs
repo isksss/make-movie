@@ -69,6 +69,100 @@ pub enum PluginSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct PluginConfig {
+    #[serde(default)]
+    pub plugin: Vec<PluginConfigEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginConfigEntry {
+    pub repository: PluginConfigRepository,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub repo: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    #[serde(default)]
+    pub component: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginConfigRepository {
+    Github,
+    Gitlab,
+    Url,
+    Local,
+}
+
+impl PluginConfigEntry {
+    pub fn identity(&self) -> String {
+        if let Some(name) = &self.name {
+            return name.clone();
+        }
+        match self.repository {
+            PluginConfigRepository::Github | PluginConfigRepository::Gitlab => {
+                format!(
+                    "{}:{}",
+                    self.owner.as_deref().unwrap_or_default(),
+                    self.repo.as_deref().unwrap_or_default()
+                )
+            }
+            PluginConfigRepository::Url => self.url.clone().unwrap_or_default(),
+            PluginConfigRepository::Local => self
+                .path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_default(),
+        }
+    }
+
+    pub fn to_manifest(&self) -> Result<PluginManifest> {
+        let source = match self.repository {
+            PluginConfigRepository::Github => PluginSource::Github {
+                owner: required_string(self.owner.as_deref(), "github plugin owner")?,
+                repo: required_string(self.repo.as_deref(), "github plugin repo")?,
+                version: self.version.clone().unwrap_or_else(|| "latest".to_string()),
+            },
+            PluginConfigRepository::Gitlab => PluginSource::Gitlab {
+                owner: required_string(self.owner.as_deref(), "gitlab plugin owner")?,
+                repo: required_string(self.repo.as_deref(), "gitlab plugin repo")?,
+                version: self.version.clone().unwrap_or_else(|| "latest".to_string()),
+            },
+            PluginConfigRepository::Url => PluginSource::Url {
+                url: required_string(self.url.as_deref(), "url plugin url")?,
+                version: self.version.clone().unwrap_or_else(|| "latest".to_string()),
+            },
+            PluginConfigRepository::Local => PluginSource::Local {
+                path: self.path.clone().context("local plugin path が必要です")?,
+            },
+        };
+        let name = self
+            .name
+            .clone()
+            .unwrap_or_else(|| derived_plugin_name(self));
+        Ok(PluginManifest {
+            name: name.clone(),
+            version: self.version.clone().unwrap_or_else(|| "local".to_string()),
+            metadata: PluginMetadata {
+                display_name: name,
+                category: PluginCategory::Utility,
+                description: String::new(),
+            },
+            source,
+            component: self.component.clone(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PluginLock {
     #[serde(default)]
     pub plugin: Vec<PluginLockEntry>,
@@ -317,6 +411,21 @@ impl PluginManager {
         self.save_lock(&lock)
     }
 
+    pub fn install_configured_plugins(
+        &self,
+        global_config_path: impl AsRef<Path>,
+        project_config_path: impl AsRef<Path>,
+    ) -> Result<Vec<ResolvedPlugin>> {
+        let global = load_plugin_config(global_config_path)?;
+        let project = load_plugin_config(project_config_path)?;
+        let config = merge_plugin_configs(&global, &project);
+        config
+            .plugin
+            .into_iter()
+            .map(|entry| self.install_manifest(entry.to_manifest()?))
+            .collect()
+    }
+
     pub fn resolve(&self, manifest: PluginManifest) -> Result<ResolvedPlugin> {
         let install_dir = self.plugin_dir.join(&manifest.name);
         let component_path = manifest
@@ -394,6 +503,48 @@ pub fn default_plugin_dir() -> PathBuf {
         return PathBuf::from(home).join(".local/share/mm/plugins");
     }
     PathBuf::from(".mm/plugins")
+}
+
+pub fn default_global_config_path() -> PathBuf {
+    if let Ok(xdg_config_home) = env::var("XDG_CONFIG_HOME") {
+        return PathBuf::from(xdg_config_home).join("mm/mm.toml");
+    }
+    if let Ok(appdata) = env::var("APPDATA") {
+        return PathBuf::from(appdata).join("mm/mm.toml");
+    }
+    if let Ok(home) = env::var("HOME") {
+        return PathBuf::from(home).join(".config/mm/mm.toml");
+    }
+    PathBuf::from(".config/mm/mm.toml")
+}
+
+pub fn load_plugin_config(path: impl AsRef<Path>) -> Result<PluginConfig> {
+    let path = path.as_ref();
+    if !path.exists() {
+        return Ok(PluginConfig::default());
+    }
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("plugin config を読み込めません: {}", path.display()))?;
+    toml::from_str(&text).context("plugin config の parse に失敗しました")
+}
+
+pub fn merge_plugin_configs(global: &PluginConfig, project: &PluginConfig) -> PluginConfig {
+    let mut merged = PluginConfig {
+        plugin: global.plugin.clone(),
+    };
+    for entry in &project.plugin {
+        let identity = entry.identity();
+        if let Some(current) = merged
+            .plugin
+            .iter_mut()
+            .find(|current| current.identity() == identity)
+        {
+            *current = entry.clone();
+        } else {
+            merged.plugin.push(entry.clone());
+        }
+    }
+    merged
 }
 
 pub fn load_manifest(path: impl AsRef<Path>) -> Result<PluginManifest> {
@@ -530,6 +681,42 @@ fn component_file_name(manifest: &PluginManifest) -> Result<String> {
     Ok(name.to_string())
 }
 
+fn required_string(value: Option<&str>, field: &str) -> Result<String> {
+    let Some(value) = value else {
+        bail!("{field} が必要です");
+    };
+    if value.trim().is_empty() {
+        bail!("{field} が必要です");
+    }
+    Ok(value.to_string())
+}
+
+fn derived_plugin_name(entry: &PluginConfigEntry) -> String {
+    match entry.repository {
+        PluginConfigRepository::Github | PluginConfigRepository::Gitlab => entry
+            .repo
+            .clone()
+            .filter(|repo| !repo.trim().is_empty())
+            .unwrap_or_else(|| "plugin".to_string()),
+        PluginConfigRepository::Url => entry
+            .url
+            .as_deref()
+            .and_then(|url| url.rsplit('/').next())
+            .and_then(|name| name.strip_suffix(".wasm").or(Some(name)))
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or("plugin")
+            .to_string(),
+        PluginConfigRepository::Local => entry
+            .path
+            .as_ref()
+            .and_then(|path| path.file_stem())
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or("plugin")
+            .to_string(),
+    }
+}
+
 fn upsert_lock(lock: &mut PluginLock, entry: PluginLockEntry) {
     if let Some(current) = lock
         .plugin
@@ -620,6 +807,116 @@ mod tests {
         manager.remove(PluginReference::named("theme"))?;
         let lock = manager.load_lock()?;
         assert!(lock.plugin.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn plugin_config_loads_missing_file_as_empty() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let config = load_plugin_config(dir.path().join("missing.toml"))?;
+
+        assert!(config.plugin.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn plugin_config_merge_prefers_project_entry() {
+        let global = PluginConfig {
+            plugin: vec![PluginConfigEntry {
+                repository: PluginConfigRepository::Github,
+                name: None,
+                owner: Some("make-movie".to_string()),
+                repo: Some("theme".to_string()),
+                version: Some("1.0.0".to_string()),
+                url: None,
+                path: None,
+                component: None,
+            }],
+        };
+        let project = PluginConfig {
+            plugin: vec![
+                PluginConfigEntry {
+                    repository: PluginConfigRepository::Github,
+                    name: None,
+                    owner: Some("make-movie".to_string()),
+                    repo: Some("theme".to_string()),
+                    version: Some("2.0.0".to_string()),
+                    url: None,
+                    path: None,
+                    component: None,
+                },
+                PluginConfigEntry {
+                    repository: PluginConfigRepository::Local,
+                    name: Some("local-tool".to_string()),
+                    owner: None,
+                    repo: None,
+                    version: None,
+                    url: None,
+                    path: Some(PathBuf::from("./plugins/local-tool")),
+                    component: None,
+                },
+            ],
+        };
+
+        let merged = merge_plugin_configs(&global, &project);
+
+        assert_eq!(merged.plugin.len(), 2);
+        assert_eq!(merged.plugin[0].version.as_deref(), Some("2.0.0"));
+        assert_eq!(merged.plugin[1].name.as_deref(), Some("local-tool"));
+    }
+
+    #[test]
+    fn manager_installs_merged_configured_plugins() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let global_source = dir.path().join("global-source");
+        let project_source = dir.path().join("project-source");
+        fs::create_dir_all(&global_source)?;
+        fs::create_dir_all(&project_source)?;
+        fs::write(global_source.join("theme.wasm"), b"\0asmglobal")?;
+        fs::write(project_source.join("theme.wasm"), b"\0asmproject")?;
+        let global_config = dir.path().join("global.toml");
+        let project_config = dir.path().join("project.toml");
+        fs::write(
+            &global_config,
+            format!(
+                r#"
+[[plugin]]
+repository = "local"
+name = "theme"
+version = "1.0.0"
+path = "{}"
+component = "theme.wasm"
+"#,
+                global_source.display()
+            ),
+        )?;
+        fs::write(
+            &project_config,
+            format!(
+                r#"
+[[plugin]]
+repository = "local"
+name = "theme"
+version = "2.0.0"
+path = "{}"
+component = "theme.wasm"
+"#,
+                project_source.display()
+            ),
+        )?;
+        let manager = PluginManager::new(dir.path().join("plugins"), dir.path().join("mm.lock"));
+
+        let resolved = manager.install_configured_plugins(&global_config, &project_config)?;
+
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].manifest.version, "2.0.0");
+        assert_eq!(
+            fs::read(dir.path().join("plugins/theme/theme.wasm"))?,
+            b"\0asmproject"
+        );
+        let lock = manager.load_lock()?;
+        assert_eq!(lock.plugin.len(), 1);
+        assert_eq!(lock.plugin[0].version, "2.0.0");
         Ok(())
     }
 
