@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use wasmtime::component::{Component, Instance as ComponentInstance, Linker as ComponentLinker};
 use wasmtime::{Engine, Instance, Linker, Module, Store};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,27 +210,52 @@ impl PluginRuntime {
                 component_path.display()
             );
         }
-        let module = Module::from_file(&self.engine, &component_path).map_err(|error| {
-            anyhow!(
-                "plugin wasm をロードできません: {} ({error})",
-                component_path.display()
-            )
-        })?;
-        let linker = Linker::new(&self.engine);
-        let mut store = Store::new(&self.engine, ());
-        let instance = linker.instantiate(&mut store, &module).map_err(|error| {
-            anyhow!(
-                "plugin wasm を instantiate できません: {} ({error})",
-                component_path.display()
-            )
-        })?;
+        let instance = self.instantiate_plugin(&component_path)?;
         self.plugins.push(LoadedPlugin {
             manifest,
             component_path,
             initialized: false,
-            wasm: Some(WasmPluginInstance { store, instance }),
+            wasm: Some(instance),
         });
         Ok(())
+    }
+
+    fn instantiate_plugin(&self, component_path: &Path) -> Result<PluginInstance> {
+        match Component::from_file(&self.engine, component_path) {
+            Ok(component) => {
+                let linker = ComponentLinker::new(&self.engine);
+                let mut store = Store::new(&self.engine, ());
+                let instance = linker
+                    .instantiate(&mut store, &component)
+                    .map_err(|error| {
+                        anyhow!(
+                            "plugin component を instantiate できません: {} ({error})",
+                            component_path.display()
+                        )
+                    })?;
+                Ok(PluginInstance::Component(ComponentPluginInstance {
+                    store,
+                    instance,
+                }))
+            }
+            Err(component_error) => {
+                let module = Module::from_file(&self.engine, component_path).map_err(|error| {
+                    anyhow!(
+                        "plugin wasm をロードできません: {} (component: {component_error}; module: {error})",
+                        component_path.display()
+                    )
+                })?;
+                let linker = Linker::new(&self.engine);
+                let mut store = Store::new(&self.engine, ());
+                let instance = linker.instantiate(&mut store, &module).map_err(|error| {
+                    anyhow!(
+                        "plugin wasm を instantiate できません: {} ({error})",
+                        component_path.display()
+                    )
+                })?;
+                Ok(PluginInstance::Core(WasmPluginInstance { store, instance }))
+            }
+        }
     }
 
     pub fn initialize_all(&mut self) -> Result<()> {
@@ -271,7 +297,7 @@ pub struct LoadedPlugin {
     pub manifest: PluginManifest,
     pub component_path: PathBuf,
     pub initialized: bool,
-    wasm: Option<WasmPluginInstance>,
+    wasm: Option<PluginInstance>,
 }
 
 impl std::fmt::Debug for LoadedPlugin {
@@ -282,6 +308,20 @@ impl std::fmt::Debug for LoadedPlugin {
             .field("component_path", &self.component_path)
             .field("initialized", &self.initialized)
             .finish_non_exhaustive()
+    }
+}
+
+enum PluginInstance {
+    Core(WasmPluginInstance),
+    Component(ComponentPluginInstance),
+}
+
+impl PluginInstance {
+    fn call_optional_export(&mut self, name: &str) -> Result<()> {
+        match self {
+            PluginInstance::Core(instance) => instance.call_optional_export(name),
+            PluginInstance::Component(instance) => instance.call_optional_export(name),
+        }
     }
 }
 
@@ -301,6 +341,26 @@ impl WasmPluginInstance {
         typed
             .call(&mut self.store, ())
             .map_err(|error| anyhow!("plugin export '{name}' の実行に失敗しました ({error})"))?;
+        Ok(())
+    }
+}
+
+struct ComponentPluginInstance {
+    store: Store<()>,
+    instance: ComponentInstance,
+}
+
+impl ComponentPluginInstance {
+    fn call_optional_export(&mut self, name: &str) -> Result<()> {
+        let Ok(function) = self
+            .instance
+            .get_typed_func::<(), ()>(&mut self.store, name)
+        else {
+            return Ok(());
+        };
+        function.call(&mut self.store, ()).map_err(|error| {
+            anyhow!("plugin component export '{name}' の実行に失敗しました ({error})")
+        })?;
         Ok(())
     }
 }
@@ -1001,6 +1061,37 @@ component = "theme.wasm"
                 (module
                     (func (export "initialize"))
                     (func (export "shutdown"))
+                )
+                "#,
+            )?,
+        )?;
+        let mut runtime = PluginRuntime::new();
+
+        runtime.load(manifest(), &component)?;
+        runtime.initialize_all()?;
+        assert!(runtime.loaded_plugins()[0].initialized);
+
+        runtime.shutdown_all()?;
+        assert!(!runtime.loaded_plugins()[0].initialized);
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_loads_component_model_plugin() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let component = dir.path().join("plugin.component.wasm");
+        fs::write(
+            &component,
+            wat::parse_str(
+                r#"
+                (component
+                    (core module $plugin
+                        (func (export "initialize"))
+                        (func (export "shutdown"))
+                    )
+                    (core instance $instance (instantiate $plugin))
+                    (func (export "initialize") (canon lift (core func $instance "initialize")))
+                    (func (export "shutdown") (canon lift (core func $instance "shutdown")))
                 )
                 "#,
             )?,
