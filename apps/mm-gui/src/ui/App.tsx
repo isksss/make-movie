@@ -51,10 +51,10 @@ export function App() {
     updateLayerTransform,
     updateLayerVisual,
     updateLayerText,
+    updateLayerVoice,
     updateLayerTransition,
     updateLayerEffect,
     updateLayerAnimation,
-    updateTts,
     undo,
     redo,
     canUndo,
@@ -69,6 +69,10 @@ export function App() {
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
   const selectedCrop = selectedLayer ? cropRect(selectedLayer.crop) : null;
   const selectedText = selectedLayer?.contentKind === "text" ? selectedLayer.text : null;
+  const voiceLayer =
+    (selectedLayer?.contentKind === "voice" ? selectedLayer : null) ??
+    project.layers.find((layer) => layer.contentKind === "voice") ??
+    null;
   const selectedTransition = selectedLayer ? layerTransition(selectedLayer.transition) : null;
   const selectedEffect = selectedLayer ? layerEffect(selectedLayer.effects[0]) : null;
   const selectedAnimation = selectedLayer ? layerAnimation(selectedLayer.animations[0]) : null;
@@ -886,41 +890,58 @@ export function App() {
             <label>
               {t.speaker}
               <input
-                onChange={(event) => updateTts({ speaker: event.target.value })}
-                value={tts.speaker}
+                disabled={!voiceLayer}
+                onChange={(event) =>
+                  voiceLayer && updateLayerVoice(voiceLayer.id, { speaker: event.target.value })
+                }
+                value={voiceLayer?.voice.speaker ?? tts.speaker}
               />
             </label>
             <label>
               {t.text}
               <textarea
-                onChange={(event) => updateTts({ text: event.target.value })}
-                value={tts.text}
+                disabled={!voiceLayer}
+                onChange={(event) =>
+                  voiceLayer && updateLayerVoice(voiceLayer.id, { text: event.target.value })
+                }
+                value={voiceLayer?.voice.text ?? tts.text}
               />
             </label>
             <label>
               {t.speed}
               <input
+                disabled={!voiceLayer}
                 min={0.5}
-                onChange={(event) => updateTts({ speed: Number(event.target.value) })}
+                onChange={(event) =>
+                  voiceLayer &&
+                  updateLayerVoice(voiceLayer.id, { speed: Number(event.target.value) })
+                }
                 step={0.1}
                 type="number"
-                value={tts.speed}
+                value={voiceLayer?.voice.speed ?? tts.speed}
               />
             </label>
             <label>
               {t.pitch}
               <input
-                onChange={(event) => updateTts({ pitch: Number(event.target.value) })}
+                disabled={!voiceLayer}
+                onChange={(event) =>
+                  voiceLayer &&
+                  updateLayerVoice(voiceLayer.id, { pitch: Number(event.target.value) })
+                }
                 step={0.1}
                 type="number"
-                value={tts.pitch}
+                value={voiceLayer?.voice.pitch ?? tts.pitch}
               />
             </label>
             <label>
               {t.emotion}
               <input
-                onChange={(event) => updateTts({ emotion: event.target.value })}
-                value={tts.emotion}
+                disabled={!voiceLayer}
+                onChange={(event) =>
+                  voiceLayer && updateLayerVoice(voiceLayer.id, { emotion: event.target.value })
+                }
+                value={voiceLayer?.voice.emotion ?? tts.emotion}
               />
             </label>
           </div>

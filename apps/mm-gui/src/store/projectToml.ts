@@ -1,4 +1,10 @@
-import { cropRect, layerTransform, layerTransition, textLayerStyle } from "../types";
+import {
+  cropRect,
+  layerTransform,
+  layerTransition,
+  textLayerStyle,
+  voiceLayerSettings,
+} from "../types";
 import type {
   Asset,
   AssetKind,
@@ -11,6 +17,7 @@ import type {
   Scene,
   TimelineLayer,
   Track,
+  TtsProviderKind,
 } from "../types";
 import { initialProject } from "./projectStore";
 
@@ -254,12 +261,15 @@ function appendContent(lines: string[], project: ProjectState, layer: TimelineLa
   }
   if (layer.contentKind === "voice") {
     lines.push(
-      'provider = "voicevox"',
-      'speaker = "ずんだもん"',
-      `text = ${quote(layer.label)}`,
-      "speed = 1",
-      "pitch = 0",
+      `provider = ${quote(layer.voice.provider)}`,
+      `speaker = ${quote(layer.voice.speaker)}`,
+      `text = ${quote(layer.voice.text || layer.label)}`,
+      `speed = ${layer.voice.speed}`,
+      `pitch = ${layer.voice.pitch}`,
     );
+    if (layer.voice.emotion) {
+      lines.push(`emotion = ${quote(layer.voice.emotion)}`);
+    }
     return;
   }
   const asset = project.assets.find((item) =>
@@ -466,6 +476,11 @@ function assignContent(layer: TimelineLayer, key: string, value: string | number
   if (key === "type") {
     layer.contentKind = String(value) as TimelineLayer["contentKind"];
   } else if (key === "text") {
+    if (layer.contentKind === "voice") {
+      layer.voice = { ...layer.voice, text: String(value) };
+      layer.label = String(value);
+      return;
+    }
     layer.text = { ...layer.text, text: String(value) };
     if (layer.label === layer.id || layer.contentKind === "text") {
       layer.label = String(value);
@@ -485,11 +500,29 @@ function assignContent(layer: TimelineLayer, key: string, value: string | number
     }
   } else if (key === "fit") {
     layer.fit = String(value) as FitMode;
+  } else if (key === "provider") {
+    layer.voice = { ...layer.voice, provider: parseTtsProvider(value) };
+  } else if (key === "speaker") {
+    layer.voice = { ...layer.voice, speaker: String(value) };
+  } else if (key === "speed") {
+    layer.voice = { ...layer.voice, speed: Number(value) };
+  } else if (key === "pitch") {
+    layer.voice = { ...layer.voice, pitch: Number(value) };
+  } else if (key === "emotion") {
+    layer.voice = { ...layer.voice, emotion: String(value) };
   } else if (key === "trim_start") {
     layer.trimStart = parseTrimValue(layer, value);
   } else if (key === "trim_end") {
     layer.trimEnd = parseTrimValue(layer, value);
   }
+}
+
+function parseTtsProvider(value: string | number): TtsProviderKind {
+  const provider = String(value);
+  if (provider === "voicevox" || provider === "aivis_speech" || provider === "coeiro_ink") {
+    return provider;
+  }
+  return "voicevox";
 }
 
 function assignTextStroke(layer: TimelineLayer, key: string, value: string | number) {
@@ -533,6 +566,7 @@ function defaultLayer(trackId: string): TimelineLayer {
     mask: "none",
     fit: "none",
     text: textLayerStyle(),
+    voice: voiceLayerSettings(),
     transition: layerTransition(),
     effects: [],
     animations: [],

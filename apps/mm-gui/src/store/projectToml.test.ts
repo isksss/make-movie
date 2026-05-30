@@ -268,6 +268,46 @@ opacity = 1
     });
   });
 
+  it("Voice layer TTS設定をTOMLとして往復できる", () => {
+    const toml = serializeProjectToToml({
+      ...initialProject,
+      layers: [
+        {
+          ...initialProject.layers.find((layer) => layer.id === "voice-main")!,
+          voice: {
+            provider: "coeiro_ink",
+            speaker: "四国めたん",
+            text: "更新後の文章",
+            speed: 1.4,
+            pitch: 0.2,
+            emotion: "happy",
+          },
+        },
+      ],
+    });
+
+    expect(toml).toContain('provider = "coeiro_ink"');
+    expect(toml).toContain('speaker = "四国めたん"');
+    expect(toml).toContain('text = "更新後の文章"');
+    expect(toml).toContain("speed = 1.4");
+    expect(toml).toContain("pitch = 0.2");
+    expect(toml).toContain('emotion = "happy"');
+
+    const parsed = parseProjectToml(toml);
+    expect(parsed.layers[0]).toMatchObject({
+      contentKind: "voice",
+      label: "更新後の文章",
+      voice: {
+        provider: "coeiro_ink",
+        speaker: "四国めたん",
+        text: "更新後の文章",
+        speed: 1.4,
+        pitch: 0.2,
+        emotion: "happy",
+      },
+    });
+  });
+
   it("scenes未定義のTOMLではfallbackのscenesを維持する", () => {
     const parsed = parseProjectToml(`
 [settings]
