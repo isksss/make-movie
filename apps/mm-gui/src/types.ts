@@ -14,6 +14,23 @@ export type EffectKind =
   | "saturation"
   | "pixelate"
   | "motion_blur";
+export type AnimatedProperty =
+  | "none"
+  | "x"
+  | "y"
+  | "scale"
+  | "rotation"
+  | "opacity"
+  | "width"
+  | "height";
+export type EasingKind =
+  | "linear"
+  | "ease_in"
+  | "ease_out"
+  | "ease_in_out"
+  | "ease_out_back"
+  | "bounce"
+  | "elastic";
 
 export interface ProjectSettings {
   title: string;
@@ -45,6 +62,7 @@ export interface TimelineLayer {
   fit: FitMode;
   transition: LayerTransition;
   effects: LayerEffect[];
+  animations: LayerAnimation[];
 }
 
 export interface LayerTransform {
@@ -75,6 +93,17 @@ export interface LayerEffect {
   amount: number;
   x: number;
   y: number;
+}
+
+export interface LayerAnimation {
+  property: AnimatedProperty;
+  easing: EasingKind;
+  keyframes: Keyframe[];
+}
+
+export interface Keyframe {
+  time: number;
+  value: number;
 }
 
 export interface Track {
@@ -143,6 +172,18 @@ export function layerEffect(overrides: Partial<LayerEffect> = {}): LayerEffect {
     amount: 1,
     x: 0,
     y: 0,
+    ...overrides,
+  };
+}
+
+export function layerAnimation(overrides: Partial<LayerAnimation> = {}): LayerAnimation {
+  return {
+    property: "none",
+    easing: "linear",
+    keyframes: [
+      { time: 0, value: 0 },
+      { time: 1, value: 1 },
+    ],
     ...overrides,
   };
 }

@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { cropRect, layerEffect, layerTransform, layerTransition } from "../types";
+import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
 import type {
   Asset,
   CropRect,
   FitMode,
+  LayerAnimation,
   LayerEffect,
   LayerTransition,
   LayerTransform,
@@ -41,6 +42,7 @@ interface ProjectStore {
   ) => void;
   updateLayerTransition: (id: string, transition: Partial<LayerTransition>) => void;
   updateLayerEffect: (id: string, effect: Partial<LayerEffect>) => void;
+  updateLayerAnimation: (id: string, animation: Partial<LayerAnimation>) => void;
   addAsset: (asset: Asset) => void;
   updateTtsText: (text: string) => void;
   undo: () => void;
@@ -85,6 +87,7 @@ export const initialProject: ProjectState = {
       fit: "none",
       transition: layerTransition(),
       effects: [],
+      animations: [],
     },
     {
       id: "intro-image",
@@ -100,6 +103,7 @@ export const initialProject: ProjectState = {
       fit: "contain",
       transition: layerTransition(),
       effects: [],
+      animations: [],
     },
     {
       id: "subtitle-main",
@@ -115,6 +119,7 @@ export const initialProject: ProjectState = {
       fit: "none",
       transition: layerTransition(),
       effects: [],
+      animations: [],
     },
     {
       id: "voice-main",
@@ -130,6 +135,7 @@ export const initialProject: ProjectState = {
       fit: "none",
       transition: layerTransition(),
       effects: [],
+      animations: [],
     },
   ],
 };
@@ -343,6 +349,29 @@ export const useProjectStore = create<ProjectStore>((set) => ({
             return {
               ...layer,
               effects: nextEffect.kind === "none" ? [] : [nextEffect],
+            };
+          }),
+        },
+      })),
+    ),
+  updateLayerAnimation: (id, animation) =>
+    set((state) =>
+      withHistory(state, () => ({
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((layer): TimelineLayer => {
+            if (layer.id !== id) {
+              return layer;
+            }
+            const current = layerAnimation(layer.animations[0]);
+            const nextAnimation = {
+              ...current,
+              ...animation,
+              keyframes: animation.keyframes ?? current.keyframes,
+            };
+            return {
+              ...layer,
+              animations: nextAnimation.property === "none" ? [] : [nextAnimation],
             };
           }),
         },
