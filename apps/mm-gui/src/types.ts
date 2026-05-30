@@ -24,6 +24,17 @@ export interface TimelineLayer {
   start: number;
   duration: number;
   zIndex: number;
+  transform: LayerTransform;
+}
+
+export interface LayerTransform {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
 }
 
 export interface Track {
@@ -52,4 +63,17 @@ export interface TtsState {
   speed: number;
   pitch: number;
   emotion: string;
+}
+
+export function layerTransform(overrides: Partial<LayerTransform> = {}): LayerTransform {
+  return {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    scale: 1,
+    rotation: 0,
+    opacity: 1,
+    ...overrides,
+  };
 }

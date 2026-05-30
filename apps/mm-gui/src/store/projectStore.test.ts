@@ -125,4 +125,31 @@ describe("projectStore", () => {
     layers = useProjectStore.getState().project.layers;
     expect(layers.some((item) => item.id === "intro-image")).toBe(false);
   });
+
+  it("layer transform を更新しUndo/Redoできる", () => {
+    useProjectStore.getState().updateLayerTransform("intro-image", {
+      width: 420,
+      height: 240,
+      rotation: 15,
+      opacity: 0.5,
+    });
+
+    let layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.transform.width).toBe(420);
+    expect(layer?.transform.height).toBe(240);
+    expect(layer?.transform.rotation).toBe(15);
+    expect(layer?.transform.opacity).toBe(0.5);
+
+    useProjectStore.getState().undo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.transform.width).toBe(840);
+    expect(layer?.transform.height).toBe(480);
+    expect(layer?.transform.rotation).toBe(0);
+    expect(layer?.transform.opacity).toBe(1);
+
+    useProjectStore.getState().redo();
+    layer = useProjectStore.getState().project.layers.find((item) => item.id === "intro-image");
+    expect(layer?.transform.width).toBe(420);
+    expect(layer?.transform.height).toBe(240);
+  });
 });

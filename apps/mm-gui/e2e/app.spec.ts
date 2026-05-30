@@ -119,3 +119,28 @@ test("選択中クリップをDuplicate/Deleteできる", async ({ page }) => {
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(timeline.getByRole("button", { name: "Intro Image Copy" })).toHaveCount(0);
 });
+
+test("PropertyからTransformを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Intro Image" })
+    .click();
+  await expect(page.getByLabel("Width")).toHaveValue("840");
+  await page.getByLabel("Width").fill("420");
+  await expect(page.getByLabel("Width")).toHaveValue("420");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByLabel("Width")).toHaveValue("840");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByLabel("Width")).toHaveValue("420");
+
+  await page.getByLabel("Height").fill("240");
+  await page.getByLabel("Rotation").fill("15");
+  await page.getByLabel("Opacity").fill("0.5");
+  await expect(page.getByLabel("Height")).toHaveValue("240");
+  await expect(page.getByLabel("Rotation")).toHaveValue("15");
+  await expect(page.getByLabel("Opacity")).toHaveValue("0.5");
+});
