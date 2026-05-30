@@ -139,18 +139,17 @@ button.selected {
 }
 
 .timeline-pane {
-  grid-column: 1 / span 2;
+  grid-column: 2;
   grid-row: 2;
 }
 
 .plugin-pane {
-  display: flex;
+  display: grid;
   gap: 8px;
   grid-column: 1;
   grid-row: 2;
-  padding-top: 172px;
-  pointer-events: none;
-  visibility: hidden;
+  grid-template-rows: auto 1fr;
+  overflow: auto;
 }
 
 .pane-heading {
@@ -166,6 +165,39 @@ button.selected {
 .asset-list {
   display: grid;
   gap: 8px;
+}
+
+.plugin-list {
+  display: grid;
+  gap: 8px;
+}
+
+.plugin-row {
+  align-items: center;
+  background: #151b1f;
+  border: 1px solid #2d3840;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 44px;
+  padding: 8px;
+}
+
+.plugin-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.plugin-actions button {
+  height: 30px;
+  width: 30px;
 }
 
 .asset-row {

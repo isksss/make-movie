@@ -1,6 +1,7 @@
 import {
   Box,
   Copy,
+  Download,
   FolderOpen,
   Import,
   Pause,
@@ -12,9 +13,11 @@ import {
   SkipBack,
   SkipForward,
   Trash2,
+  RefreshCw,
   Redo2,
   Undo2,
   Wand2,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { commands } from "../services/tauri";
@@ -29,6 +32,7 @@ import { PreviewCanvas } from "./PreviewCanvas";
 
 const defaultProjectPath = "mm.toml";
 const defaultImportPath = "media/image/import.png";
+const plugins = ["VOICEVOX", "AivisSpeech", "Template Pack"] as const;
 
 export function App() {
   const {
@@ -822,9 +826,42 @@ export function App() {
             <Wand2 size={16} />
             <span>{t.plugins}</span>
           </div>
-          <button>VOICEVOX</button>
-          <button>AivisSpeech</button>
-          <button>Template Pack</button>
+          <div className="plugin-list">
+            {plugins.map((pluginName) => (
+              <div className="plugin-row" key={pluginName}>
+                <span>{pluginName}</span>
+                <div className="plugin-actions">
+                  <button
+                    aria-label={`${t.installPlugin} ${pluginName}`}
+                    onClick={() =>
+                      runCommand(() => commands.installPlugin(pluginName), t.pluginInstalled)
+                    }
+                    title={`${t.installPlugin} ${pluginName}`}
+                  >
+                    <Download size={16} />
+                  </button>
+                  <button
+                    aria-label={`${t.updatePlugin} ${pluginName}`}
+                    onClick={() =>
+                      runCommand(() => commands.updatePlugin(pluginName), t.pluginUpdated)
+                    }
+                    title={`${t.updatePlugin} ${pluginName}`}
+                  >
+                    <RefreshCw size={16} />
+                  </button>
+                  <button
+                    aria-label={`${t.removePlugin} ${pluginName}`}
+                    onClick={() =>
+                      runCommand(() => commands.removePlugin(pluginName), t.pluginRemoved)
+                    }
+                    title={`${t.removePlugin} ${pluginName}`}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
       </main>
     </div>
