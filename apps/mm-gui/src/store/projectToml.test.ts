@@ -43,6 +43,35 @@ describe("projectToml", () => {
     expect(toml).toContain("[[tracks.layers.animations.keyframes]]");
   });
 
+  it("Text layer styleをTOMLへserializeできる", () => {
+    const toml = serializeProjectToToml({
+      ...initialProject,
+      layers: [
+        {
+          ...initialProject.layers[0],
+          text: {
+            text: "複数行\nタイトル",
+            fontSize: 72,
+            color: "#ffcc00",
+            letterSpacing: 1.5,
+            lineSpacing: 1.4,
+            align: "left",
+            stroke: { color: "#111111", width: 3 },
+            shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+          },
+        },
+      ],
+    });
+
+    expect(toml).toContain('text = "複数行\\nタイトル"');
+    expect(toml).toContain("font_size = 72");
+    expect(toml).toContain('color = "#ffcc00"');
+    expect(toml).toContain("letter_spacing = 1.5");
+    expect(toml).toContain('align = "left"');
+    expect(toml).toContain("[tracks.layers.content.stroke]");
+    expect(toml).toContain("[tracks.layers.content.shadow]");
+  });
+
   it("plugin宣言をserializeできる", () => {
     const toml = serializeProjectToToml({
       ...initialProject,
@@ -173,6 +202,70 @@ opacity = 1
       zIndex: 2,
     });
     expect(parsed.layers[0].transform.width).toBe(320);
+  });
+
+  it("Text layer styleをTOMLからparseできる", () => {
+    const parsed = parseProjectToml(`
+[settings]
+title = "Text"
+width = 1280
+height = 720
+fps = 30
+sample_rate = 48000
+duration = 3
+output = "output/text.mp4"
+
+[[tracks]]
+id = "v3"
+name = "V3 Text"
+kind = "video"
+
+[[tracks.layers]]
+id = "title"
+label = "Title"
+start = 0
+duration = 3
+z_index = 10
+
+[tracks.layers.content]
+type = "text"
+text = "複数行\\nタイトル"
+font_size = 72
+color = "#ffcc00"
+letter_spacing = 1.5
+line_spacing = 1.4
+align = "right"
+
+[tracks.layers.content.stroke]
+color = "#111111"
+width = 3
+
+[tracks.layers.content.shadow]
+color = "#222222"
+offset_x = 4
+offset_y = 5
+blur = 6
+
+[tracks.layers.transform]
+x = 0
+y = 0
+width = 320
+height = 180
+scale = 1
+rotation = 0
+opacity = 1
+`);
+
+    expect(parsed.layers[0].text).toMatchObject({
+      text: "複数行\nタイトル",
+      fontSize: 72,
+      color: "#ffcc00",
+      letterSpacing: 1.5,
+      lineSpacing: 1.4,
+      align: "right",
+      stroke: { color: "#111111", width: 3 },
+      shadow: { color: "#222222", offsetX: 4, offsetY: 5, blur: 6 },
+    });
   });
 
   it("scenes未定義のTOMLではfallbackのscenesを維持する", () => {

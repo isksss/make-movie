@@ -50,6 +50,7 @@ export function App() {
     updateLayerTrim,
     updateLayerTransform,
     updateLayerVisual,
+    updateLayerText,
     updateLayerTransition,
     updateLayerEffect,
     updateLayerAnimation,
@@ -67,6 +68,7 @@ export function App() {
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
   const selectedCrop = selectedLayer ? cropRect(selectedLayer.crop) : null;
+  const selectedText = selectedLayer?.contentKind === "text" ? selectedLayer.text : null;
   const selectedTransition = selectedLayer ? layerTransition(selectedLayer.transition) : null;
   const selectedEffect = selectedLayer ? layerEffect(selectedLayer.effects[0]) : null;
   const selectedAnimation = selectedLayer ? layerAnimation(selectedLayer.animations[0]) : null;
@@ -289,6 +291,160 @@ export function App() {
                       step={0.1}
                       type="number"
                       value={selectedLayer.trimEnd}
+                    />
+                  </label>
+                </>
+              ) : null}
+              {selectedText ? (
+                <>
+                  <label>
+                    {t.text}
+                    <textarea
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, { text: event.target.value })
+                      }
+                      value={selectedText.text}
+                    />
+                  </label>
+                  <label>
+                    {t.fontSize}
+                    <input
+                      min={1}
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, { fontSize: Number(event.target.value) })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedText.fontSize}
+                    />
+                  </label>
+                  <label>
+                    {t.textColor}
+                    <input
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, { color: event.target.value })
+                      }
+                      type="text"
+                      value={selectedText.color}
+                    />
+                  </label>
+                  <label>
+                    {t.letterSpacing}
+                    <input
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          letterSpacing: Number(event.target.value),
+                        })
+                      }
+                      step={0.1}
+                      type="number"
+                      value={selectedText.letterSpacing}
+                    />
+                  </label>
+                  <label>
+                    {t.lineSpacing}
+                    <input
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          lineSpacing: Number(event.target.value),
+                        })
+                      }
+                      step={0.1}
+                      type="number"
+                      value={selectedText.lineSpacing}
+                    />
+                  </label>
+                  <label>
+                    {t.textAlign}
+                    <select
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          align: event.target
+                            .value as ProjectState["layers"][number]["text"]["align"],
+                        })
+                      }
+                      value={selectedText.align}
+                    >
+                      <option value="left">left</option>
+                      <option value="center">center</option>
+                      <option value="right">right</option>
+                    </select>
+                  </label>
+                  <label>
+                    {t.strokeColor}
+                    <input
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          stroke: { ...selectedText.stroke, color: event.target.value },
+                        })
+                      }
+                      value={selectedText.stroke.color}
+                    />
+                  </label>
+                  <label>
+                    {t.strokeWidth}
+                    <input
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          stroke: { ...selectedText.stroke, width: Number(event.target.value) },
+                        })
+                      }
+                      step={0.1}
+                      type="number"
+                      value={selectedText.stroke.width}
+                    />
+                  </label>
+                  <label>
+                    {t.shadowColor}
+                    <input
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          shadow: { ...selectedText.shadow, color: event.target.value },
+                        })
+                      }
+                      value={selectedText.shadow.color}
+                    />
+                  </label>
+                  <label>
+                    {t.shadowOffsetX}
+                    <input
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          shadow: { ...selectedText.shadow, offsetX: Number(event.target.value) },
+                        })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedText.shadow.offsetX}
+                    />
+                  </label>
+                  <label>
+                    {t.shadowOffsetY}
+                    <input
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          shadow: { ...selectedText.shadow, offsetY: Number(event.target.value) },
+                        })
+                      }
+                      step={1}
+                      type="number"
+                      value={selectedText.shadow.offsetY}
+                    />
+                  </label>
+                  <label>
+                    {t.shadowBlur}
+                    <input
+                      min={0}
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, {
+                          shadow: { ...selectedText.shadow, blur: Number(event.target.value) },
+                        })
+                      }
+                      step={0.1}
+                      type="number"
+                      value={selectedText.shadow.blur}
                     />
                   </label>
                 </>
