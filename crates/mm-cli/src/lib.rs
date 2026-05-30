@@ -10,6 +10,7 @@ use mm_render::{
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 #[derive(Debug, Parser)]
 #[command(name = "mm")]
@@ -118,6 +119,18 @@ pub fn run() -> Result<()> {
     run_with(Cli::parse())
 }
 
+pub fn run_and_report() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            let args = env::args().collect::<Vec<_>>();
+            let language = resolve_language(language_from_args(&args));
+            eprintln!("{}", localized_error(language, &error));
+            ExitCode::FAILURE
+        }
+    }
+}
+
 pub fn run_with(cli: Cli) -> Result<()> {
     let messages = Messages::new(resolve_language(cli.lang));
     match cli.command {
@@ -129,6 +142,87 @@ pub fn run_with(cli: Cli) -> Result<()> {
         Command::Doctor => doctor(messages),
         Command::Plugin { command } => plugin(command, messages),
     }
+}
+
+fn localized_error(language: CliLanguage, error: &anyhow::Error) -> String {
+    let mut chain = error.chain();
+    let first = chain.next().expect("anyhow error chain is never empty");
+    let mut lines = vec![format!(
+        "{}: {}",
+        error_label(language),
+        translate_error_message(language, &first.to_string())
+    )];
+    lines.extend(chain.map(|cause| {
+        format!(
+            "{}: {}",
+            cause_label(language),
+            translate_error_message(language, &cause.to_string())
+        )
+    }));
+    lines.join("\n")
+}
+
+fn error_label(language: CliLanguage) -> &'static str {
+    match language {
+        CliLanguage::Ja => "エラー",
+        CliLanguage::En => "error",
+    }
+}
+
+fn cause_label(language: CliLanguage) -> &'static str {
+    match language {
+        CliLanguage::Ja => "原因",
+        CliLanguage::En => "caused by",
+    }
+}
+
+fn translate_error_message(language: CliLanguage, message: &str) -> String {
+    if matches!(language, CliLanguage::Ja) {
+        return message.to_string();
+    }
+
+    [
+        ("プロジェクトを読み込めません", "failed to read project"),
+        ("mm.toml の parse に失敗しました", "failed to parse mm.toml"),
+        ("settings.title は必須です", "settings.title is required"),
+        (
+            "settings.width と settings.height は 1 以上である必要があります",
+            "settings.width and settings.height must be at least 1",
+        ),
+        (
+            "settings.fps は 1 以上である必要があります",
+            "settings.fps must be at least 1",
+        ),
+        (
+            "settings.sample_rate は 1 以上である必要があります",
+            "settings.sample_rate must be at least 1",
+        ),
+        (
+            "settings.duration は 0 より大きい必要があります",
+            "settings.duration must be greater than 0",
+        ),
+        (
+            "preview 出力先ディレクトリを作成できません",
+            "failed to create preview output directory",
+        ),
+        (
+            "preview 画像を保存できません",
+            "failed to save preview image",
+        ),
+        ("cache を削除できません", "failed to remove cache"),
+        (
+            "ffmpeg が見つかりません。MM_FFMPEG または PATH を確認してください",
+            "ffmpeg was not found. Check MM_FFMPEG or PATH",
+        ),
+        (
+            "ffprobe が見つかりません。PATH を確認してください",
+            "ffprobe was not found. Check PATH",
+        ),
+    ]
+    .into_iter()
+    .fold(message.to_string(), |translated, (ja, en)| {
+        translated.replace(ja, en)
+    })
 }
 
 fn resolve_language(language: Option<CliLanguage>) -> CliLanguage {

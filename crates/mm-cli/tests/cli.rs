@@ -61,6 +61,60 @@ fn validate_command_outputs_japanese_with_lang() {
 }
 
 #[test]
+fn validate_error_outputs_english_with_lang() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("en")
+        .arg("validate")
+        .arg("--project")
+        .arg(dir.path().join("missing.toml"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(stderr.contains("error: failed to read project"));
+}
+
+#[test]
+fn validate_error_outputs_japanese_with_lang() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("ja")
+        .arg("validate")
+        .arg("--project")
+        .arg(dir.path().join("missing.toml"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(stderr.contains("エラー: プロジェクトを読み込めません"));
+}
+
+#[test]
+fn validate_rule_error_outputs_english_with_env_lang() {
+    let dir = tempfile::tempdir().unwrap();
+    write_invalid_project(dir.path());
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .env("MM_LANG", "en")
+        .arg("validate")
+        .arg("--project")
+        .arg(dir.path().join("mm.toml"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(stderr.contains("error: settings.width and settings.height must be at least 1"));
+}
+
+#[test]
 fn help_outputs_japanese_with_lang() {
     let mut command = Command::cargo_bin("mm").unwrap();
     let assert = command
@@ -306,6 +360,23 @@ scale = 1.0
 rotation = 0.0
 opacity = 1.0
 "##,
+    )
+    .unwrap();
+}
+
+fn write_invalid_project(root: &Path) {
+    fs::write(
+        root.join("mm.toml"),
+        r#"
+[settings]
+title = "Invalid"
+width = 0
+height = 180
+fps = 30
+sample_rate = 48000
+duration = 1.0
+output = "output/movie.mp4"
+"#,
     )
     .unwrap();
 }
