@@ -22,6 +22,8 @@ import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
 import type { ProjectState } from "../types";
+import { messages } from "./i18n";
+import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
 
 const defaultProjectPath = "mm.toml";
@@ -53,7 +55,9 @@ export function App() {
     canRedo,
   } = useProjectStore();
   const preview = usePreviewStore();
-  const [commandStatus, setCommandStatus] = useState("Ready");
+  const [locale, setLocale] = useState<Locale>("ja");
+  const t = messages[locale];
+  const [commandStatus, setCommandStatus] = useState<string>(t.ready);
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
@@ -80,7 +84,7 @@ export function App() {
               runCommand(async () => {
                 const toml = await commands.loadProject(defaultProjectPath);
                 setProject(parseProjectToml(toml, project));
-              }, "プロジェクトを開きました")
+              }, t.opened)
             }
             title="Open project"
           >
@@ -90,7 +94,7 @@ export function App() {
             onClick={() =>
               runCommand(
                 () => commands.saveProject(defaultProjectPath, serializeProjectToToml(project)),
-                "プロジェクトを保存しました",
+                t.saved,
               )
             }
             title="Save project"
@@ -101,7 +105,7 @@ export function App() {
             onClick={() =>
               runCommand(
                 () => commands.importAsset(defaultProjectRoot, defaultImportPath, "image"),
-                "アセットを取り込みました",
+                t.imported,
               )
             }
             title="Import asset"
@@ -109,9 +113,7 @@ export function App() {
             <Import size={18} />
           </button>
           <button
-            onClick={() =>
-              runCommand(() => commands.buildProject(defaultProjectPath), "動画を書き出しました")
-            }
+            onClick={() => runCommand(() => commands.buildProject(defaultProjectPath), t.built)}
             title="Build movie"
           >
             <Wand2 size={18} />
@@ -126,13 +128,28 @@ export function App() {
         <div aria-live="polite" className="command-status">
           {commandStatus}
         </div>
+        <label className="language-select">
+          {t.language}
+          <select
+            aria-label="Language"
+            onChange={(event) => {
+              const nextLocale = event.target.value as Locale;
+              setLocale(nextLocale);
+              setCommandStatus(messages[nextLocale].ready);
+            }}
+            value={locale}
+          >
+            <option value="ja">{t.japanese}</option>
+            <option value="en">{t.english}</option>
+          </select>
+        </label>
       </header>
 
       <main className="workspace">
         <section className="assets-pane" aria-label="Assets">
           <div className="pane-heading">
             <Box size={16} />
-            <span>Assets</span>
+            <span>{t.assets}</span>
           </div>
           <div className="asset-list">
             {project.assets.map((asset) => (
@@ -193,16 +210,16 @@ export function App() {
         <section className="property-pane" aria-label="Property">
           <div className="pane-heading">
             <Settings size={16} />
-            <span>Property</span>
+            <span>{t.property}</span>
           </div>
           {selectedLayer ? (
             <div className="property-grid">
               <label>
-                Layer
+                {t.layer}
                 <input readOnly value={selectedLayer.label} />
               </label>
               <label>
-                Start
+                {t.start}
                 <input
                   min={0}
                   onChange={(event) => moveLayer(selectedLayer.id, Number(event.target.value))}
@@ -212,7 +229,7 @@ export function App() {
                 />
               </label>
               <label>
-                Duration
+                {t.duration}
                 <input readOnly value={selectedLayer.duration} />
               </label>
               <label>
@@ -409,7 +426,7 @@ export function App() {
                   {selectedTransition ? (
                     <>
                       <label>
-                        Transition
+                        {t.transition}
                         <select
                           onChange={(event) =>
                             updateLayerTransition(selectedLayer.id, {
@@ -429,7 +446,7 @@ export function App() {
                         </select>
                       </label>
                       <label>
-                        Transition Duration
+                        {t.transitionDuration}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -447,7 +464,7 @@ export function App() {
                   {selectedEffect ? (
                     <>
                       <label>
-                        Effect
+                        {t.effect}
                         <select
                           onChange={(event) =>
                             updateLayerEffect(selectedLayer.id, {
@@ -471,7 +488,7 @@ export function App() {
                         </select>
                       </label>
                       <label>
-                        Effect Duration
+                        {t.effectDuration}
                         <input
                           min={0}
                           onChange={(event) =>
@@ -485,7 +502,7 @@ export function App() {
                         />
                       </label>
                       <label>
-                        Effect Amount
+                        {t.effectAmount}
                         <input
                           onChange={(event) =>
                             updateLayerEffect(selectedLayer.id, {
@@ -528,7 +545,7 @@ export function App() {
                   {selectedAnimation ? (
                     <>
                       <label>
-                        Keyframe Property
+                        {t.keyframeProperty}
                         <select
                           onChange={(event) =>
                             updateLayerAnimation(selectedLayer.id, {
@@ -549,7 +566,7 @@ export function App() {
                         </select>
                       </label>
                       <label>
-                        Easing
+                        {t.easing}
                         <select
                           onChange={(event) =>
                             updateLayerAnimation(selectedLayer.id, {
@@ -654,11 +671,11 @@ export function App() {
           ) : null}
           <div className="tts-editor">
             <label>
-              Speaker
+              {t.speaker}
               <input readOnly value={tts.speaker} />
             </label>
             <label>
-              Text
+              {t.text}
               <textarea onChange={(event) => updateTtsText(event.target.value)} value={tts.text} />
             </label>
           </div>
@@ -718,7 +735,7 @@ export function App() {
         <section className="plugin-pane" aria-label="Plugin Manager">
           <div className="pane-heading">
             <Wand2 size={16} />
-            <span>Plugins</span>
+            <span>{t.plugins}</span>
           </div>
           <button>VOICEVOX</button>
           <button>AivisSpeech</button>

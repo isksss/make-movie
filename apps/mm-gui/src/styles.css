@@ -82,6 +82,17 @@ button.selected {
   white-space: nowrap;
 }
 
+.language-select {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.language-select select {
+  min-height: 30px;
+}
+
 .toolbar button,
 .preview-controls button,
 .timeline-toolbar button {

@@ -23,6 +23,44 @@ fn validate_command_accepts_valid_project() {
 }
 
 #[test]
+fn validate_command_outputs_english_with_lang() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project(dir.path());
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("en")
+        .arg("validate")
+        .arg("--project")
+        .arg(dir.path().join("mm.toml"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("validate completed"));
+}
+
+#[test]
+fn validate_command_outputs_japanese_with_lang() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project(dir.path());
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("ja")
+        .arg("validate")
+        .arg("--project")
+        .arg(dir.path().join("mm.toml"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("validate が完了しました"));
+}
+
+#[test]
 fn preview_command_writes_png_frame() {
     let dir = tempfile::tempdir().unwrap();
     write_valid_project(dir.path());
