@@ -26,6 +26,8 @@ describe("projectToml", () => {
     });
 
     expect(toml).toContain("[[assets]]");
+    expect(toml).toContain("[[scenes]]");
+    expect(toml).toContain('name = "Intro"');
     expect(toml).toContain("[[tracks]]");
     expect(toml).toContain("[[tracks.layers]]");
     expect(toml).toContain('[tracks.layers.content]\ntype = "image"');
@@ -51,6 +53,12 @@ output = "output/loaded.mp4"
 id = "hero"
 kind = "image"
 path = "media/image/hero.png"
+
+[[scenes]]
+id = "scene-1"
+name = "Opening"
+start = 0
+duration = 6
 
 [[tracks]]
 id = "v1"
@@ -86,6 +94,12 @@ opacity = 1
       kind: "image",
       path: "media/image/hero.png",
     });
+    expect(parsed.scenes[0]).toEqual({
+      id: "scene-1",
+      name: "Opening",
+      start: 0,
+      duration: 6,
+    });
     expect(parsed.tracks[0].id).toBe("v1");
     expect(parsed.layers[0]).toMatchObject({
       id: "hero-layer",
@@ -98,5 +112,20 @@ opacity = 1
       zIndex: 2,
     });
     expect(parsed.layers[0].transform.width).toBe(320);
+  });
+
+  it("scenes未定義のTOMLではfallbackのscenesを維持する", () => {
+    const parsed = parseProjectToml(`
+[settings]
+title = "No Scenes"
+width = 1280
+height = 720
+fps = 30
+sample_rate = 48000
+duration = 3
+output = "output/no-scenes.mp4"
+`);
+
+    expect(parsed.scenes).toEqual(initialProject.scenes);
   });
 });

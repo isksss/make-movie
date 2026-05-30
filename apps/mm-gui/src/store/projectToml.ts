@@ -6,12 +6,13 @@ import type {
   LayerEffect,
   LayerTransition,
   ProjectState,
+  Scene,
   TimelineLayer,
   Track,
 } from "../types";
 import { initialProject } from "./projectStore";
 
-type Section = "settings" | "asset" | "track" | "layer" | "content" | "transform";
+type Section = "settings" | "asset" | "scene" | "track" | "layer" | "content" | "transform";
 
 export function serializeProjectToToml(project: ProjectState): string {
   const lines: string[] = [
@@ -33,6 +34,17 @@ export function serializeProjectToToml(project: ProjectState): string {
       `id = ${quote(asset.id)}`,
       `kind = ${quote(asset.kind)}`,
       `path = ${quote(asset.path)}`,
+      "",
+    );
+  }
+
+  for (const scene of project.scenes) {
+    lines.push(
+      "[[scenes]]",
+      `id = ${quote(scene.id)}`,
+      `name = ${quote(scene.name)}`,
+      `start = ${scene.start}`,
+      `duration = ${scene.duration}`,
       "",
     );
   }
@@ -60,10 +72,12 @@ export function parseProjectToml(
   const project: ProjectState = {
     settings: { ...fallback.settings },
     assets: [],
+    scenes: [],
     tracks: [],
     layers: [],
   };
   let section: Section | null = null;
+  let currentScene: Scene | null = null;
   let currentTrack: Track | null = null;
   let currentLayer: TimelineLayer | null = null;
 
@@ -79,6 +93,12 @@ export function parseProjectToml(
     if (line === "[[assets]]") {
       section = "asset";
       project.assets.push({ id: "", kind: "image", path: "" });
+      continue;
+    }
+    if (line === "[[scenes]]") {
+      section = "scene";
+      currentScene = { id: "", name: "", start: 0, duration: 1 };
+      project.scenes.push(currentScene);
       continue;
     }
     if (line === "[[tracks]]") {
@@ -106,12 +126,21 @@ export function parseProjectToml(
     if (!key || rawValue === undefined) {
       continue;
     }
-    assignValue(project, section, key, parseTomlValue(rawValue), currentTrack, currentLayer);
+    assignValue(
+      project,
+      section,
+      key,
+      parseTomlValue(rawValue),
+      currentScene,
+      currentTrack,
+      currentLayer,
+    );
   }
 
   return {
     settings: project.settings,
     assets: project.assets.length > 0 ? project.assets : structuredClone(fallback.assets),
+    scenes: project.scenes.length > 0 ? project.scenes : structuredClone(fallback.scenes),
     tracks: project.tracks.length > 0 ? project.tracks : structuredClone(fallback.tracks),
     layers: project.layers.length > 0 ? project.layers : structuredClone(fallback.layers),
   };
@@ -252,6 +281,7 @@ function assignValue(
   section: Section | null,
   key: string,
   value: string | number,
+  currentScene: Scene | null,
   currentTrack: Track | null,
   currentLayer: TimelineLayer | null,
 ) {
@@ -260,6 +290,8 @@ function assignValue(
   } else if (section === "asset") {
     const asset = project.assets.at(-1);
     if (asset) assignAsset(asset, key, value);
+  } else if (section === "scene" && currentScene) {
+    assignScene(currentScene, key, value);
   } else if (section === "track" && currentTrack) {
     assignTrack(currentTrack, key, value);
   } else if (section === "layer" && currentLayer) {
@@ -284,6 +316,11 @@ function assignSettings(project: ProjectState, key: string, value: string | numb
 function assignAsset(asset: Asset, key: string, value: string | number) {
   if (key === "kind") asset.kind = String(value) as AssetKind;
   else if (key === "id" || key === "path") asset[key] = String(value);
+}
+
+function assignScene(scene: Scene, key: string, value: string | number) {
+  if (key === "id" || key === "name") scene[key] = String(value);
+  else if (key === "start" || key === "duration") scene[key] = Number(value);
 }
 
 function assignTrack(track: Track, key: string, value: string | number) {
