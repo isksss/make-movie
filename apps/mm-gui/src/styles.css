@@ -196,7 +196,7 @@ button.selected {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(3, 34px) 1fr 82px;
+  grid-template-columns: repeat(4, 34px) 1fr 82px;
 }
 
 .preview-controls input {

@@ -25,4 +25,12 @@ describe("previewStore", () => {
 
     expect(usePreviewStore.getState().currentTime).toBeCloseTo(1.04);
   });
+
+  it("loop を切り替えられる", () => {
+    usePreviewStore.getState().toggleLoop();
+    expect(usePreviewStore.getState().loop).toBe(true);
+
+    usePreviewStore.getState().toggleLoop();
+    expect(usePreviewStore.getState().loop).toBe(false);
+  });
 });

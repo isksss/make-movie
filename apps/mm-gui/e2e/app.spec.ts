@@ -70,6 +70,11 @@ test("プレビュー操作とタイムライン選択がUIに反映される", 
 
   await page.getByLabel("Playback rate").selectOption("2");
   await expect(page.getByLabel("Playback rate")).toHaveValue("2");
+
+  const loop = page.getByRole("button", { name: "Loop" });
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+  await loop.click();
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
 });
 
 test("プロパティ編集をUndo/Redoできる", async ({ page }) => {

@@ -5,6 +5,7 @@ import {
   Import,
   Pause,
   Play,
+  Repeat,
   Save,
   Scissors,
   Settings,
@@ -195,6 +196,14 @@ export function App() {
             </button>
             <button title={t.nextFrame} onClick={() => preview.stepFrame(project.settings.fps, 1)}>
               <SkipForward size={18} />
+            </button>
+            <button
+              aria-pressed={preview.loop}
+              className={preview.loop ? "selected" : undefined}
+              onClick={preview.toggleLoop}
+              title={t.loop}
+            >
+              <Repeat size={18} />
             </button>
             <input
               aria-label={t.seek}
