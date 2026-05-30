@@ -210,10 +210,12 @@ impl PluginRuntime {
                 component_path.display()
             );
         }
-        let instance = self.instantiate_plugin(&component_path)?;
+        let mut instance = self.instantiate_plugin(&component_path)?;
+        let abi_metadata = instance.metadata()?;
         self.plugins.push(LoadedPlugin {
             manifest,
             component_path,
+            abi_metadata,
             initialized: false,
             wasm: Some(instance),
         });
@@ -241,7 +243,7 @@ impl PluginRuntime {
             Err(component_error) => {
                 let module = Module::from_file(&self.engine, component_path).map_err(|error| {
                     anyhow!(
-                        "plugin wasm をロードできません: {} (component: {component_error}; module: {error})",
+                        "plugin wasm をロードできません: {} (component: {component_error:#}; module: {error:#})",
                         component_path.display()
                     )
                 })?;
@@ -296,6 +298,7 @@ impl Default for PluginRuntime {
 pub struct LoadedPlugin {
     pub manifest: PluginManifest,
     pub component_path: PathBuf,
+    pub abi_metadata: Option<String>,
     pub initialized: bool,
     wasm: Option<PluginInstance>,
 }
@@ -306,6 +309,7 @@ impl std::fmt::Debug for LoadedPlugin {
             .debug_struct("LoadedPlugin")
             .field("manifest", &self.manifest)
             .field("component_path", &self.component_path)
+            .field("abi_metadata", &self.abi_metadata)
             .field("initialized", &self.initialized)
             .finish_non_exhaustive()
     }
@@ -317,6 +321,13 @@ enum PluginInstance {
 }
 
 impl PluginInstance {
+    fn metadata(&mut self) -> Result<Option<String>> {
+        match self {
+            PluginInstance::Core(_) => Ok(None),
+            PluginInstance::Component(instance) => instance.metadata(),
+        }
+    }
+
     fn call_optional_export(&mut self, name: &str) -> Result<()> {
         match self {
             PluginInstance::Core(instance) => instance.call_optional_export(name),
@@ -351,6 +362,22 @@ struct ComponentPluginInstance {
 }
 
 impl ComponentPluginInstance {
+    fn metadata(&mut self) -> Result<Option<String>> {
+        let Ok(function) = self
+            .instance
+            .get_typed_func::<(), (String,)>(&mut self.store, "metadata")
+        else {
+            return Ok(None);
+        };
+        let metadata = function
+            .call(&mut self.store, ())
+            .map_err(|error| {
+                anyhow!("plugin component export 'metadata' の実行に失敗しました ({error})")
+            })?
+            .0;
+        Ok(Some(metadata))
+    }
+
     fn call_optional_export(&mut self, name: &str) -> Result<()> {
         let Ok(function) = self
             .instance
@@ -1086,10 +1113,18 @@ component = "theme.wasm"
                 r#"
                 (component
                     (core module $plugin
+                        (memory (export "memory") 1)
+                        (data (i32.const 0) "\08\00\00\00\14\00\00\00")
+                        (data (i32.const 8) "{\"name\":\"component\"}")
+                        (func (export "metadata") (result i32)
+                            i32.const 0)
                         (func (export "initialize"))
                         (func (export "shutdown"))
                     )
                     (core instance $instance (instantiate $plugin))
+                    (func (export "metadata") (result string)
+                        (canon lift (core func $instance "metadata")
+                            (memory $instance "memory")))
                     (func (export "initialize") (canon lift (core func $instance "initialize")))
                     (func (export "shutdown") (canon lift (core func $instance "shutdown")))
                 )
@@ -1099,6 +1134,10 @@ component = "theme.wasm"
         let mut runtime = PluginRuntime::new();
 
         runtime.load(manifest(), &component)?;
+        assert_eq!(
+            runtime.loaded_plugins()[0].abi_metadata.as_deref(),
+            Some(r#"{"name":"component"}"#)
+        );
         runtime.initialize_all()?;
         assert!(runtime.loaded_plugins()[0].initialized);
 
