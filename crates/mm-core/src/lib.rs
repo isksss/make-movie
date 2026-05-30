@@ -1,6 +1,9 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::env;
 use std::fs;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -264,6 +267,294 @@ pub struct AudioBuffer {
     pub sample_rate: u32,
     pub channels: u16,
     pub samples: Vec<f32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoicevoxProvider {
+    endpoint: String,
+    client: reqwest::blocking::Client,
+}
+
+impl VoicevoxProvider {
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+}
+
+impl Default for VoicevoxProvider {
+    fn default() -> Self {
+        Self::new(
+            env::var("MM_VOICEVOX_ENDPOINT")
+                .unwrap_or_else(|_| "http://127.0.0.1:50021".to_string()),
+        )
+    }
+}
+
+impl TtsProvider for VoicevoxProvider {
+    fn synthesize(&self, request: SynthesisRequest) -> Result<AudioBuffer> {
+        synthesize_voicevox_compatible(&self.client, &self.endpoint, request)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AivisProvider {
+    endpoint: String,
+    client: reqwest::blocking::Client,
+}
+
+impl AivisProvider {
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+}
+
+impl Default for AivisProvider {
+    fn default() -> Self {
+        Self::new(
+            env::var("MM_AIVIS_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:10101".to_string()),
+        )
+    }
+}
+
+impl TtsProvider for AivisProvider {
+    fn synthesize(&self, request: SynthesisRequest) -> Result<AudioBuffer> {
+        synthesize_voicevox_compatible(&self.client, &self.endpoint, request)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CoeiroInkProvider {
+    endpoint: String,
+    client: reqwest::blocking::Client,
+}
+
+impl CoeiroInkProvider {
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+}
+
+impl Default for CoeiroInkProvider {
+    fn default() -> Self {
+        Self::new(
+            env::var("MM_COEIROINK_ENDPOINT")
+                .unwrap_or_else(|_| "http://127.0.0.1:50032".to_string()),
+        )
+    }
+}
+
+impl TtsProvider for CoeiroInkProvider {
+    fn synthesize(&self, request: SynthesisRequest) -> Result<AudioBuffer> {
+        let url = format!("{}/v1/synthesis", self.endpoint.trim_end_matches('/'));
+        let response = self
+            .client
+            .post(url)
+            .json(&json!({
+                "speaker": request.speaker,
+                "text": request.text,
+                "speedScale": request.speed,
+                "pitchScale": request.pitch,
+                "emotion": request.emotion,
+            }))
+            .send()
+            .context("CoeiroInk synthesis request に失敗しました")?
+            .error_for_status()
+            .context("CoeiroInk synthesis が失敗しました")?
+            .bytes()
+            .context("CoeiroInk synthesis response を読み込めません")?;
+        decode_wav_audio(&response)
+    }
+}
+
+pub fn synthesize_with_default_provider(
+    provider: TtsProviderKind,
+    request: SynthesisRequest,
+) -> Result<AudioBuffer> {
+    match provider {
+        TtsProviderKind::Voicevox => VoicevoxProvider::default().synthesize(request),
+        TtsProviderKind::AivisSpeech => AivisProvider::default().synthesize(request),
+        TtsProviderKind::CoeiroInk => CoeiroInkProvider::default().synthesize(request),
+    }
+}
+
+fn synthesize_voicevox_compatible(
+    client: &reqwest::blocking::Client,
+    endpoint: &str,
+    request: SynthesisRequest,
+) -> Result<AudioBuffer> {
+    let endpoint = endpoint.trim_end_matches('/');
+    let speaker = request.speaker.parse::<u32>().unwrap_or(1);
+    let query_url = format!("{endpoint}/audio_query");
+    let synthesis_url = format!("{endpoint}/synthesis");
+    let mut query: Value = client
+        .post(query_url)
+        .query(&[
+            ("text", request.text.clone()),
+            ("speaker", speaker.to_string()),
+        ])
+        .send()
+        .context("audio_query request に失敗しました")?
+        .error_for_status()
+        .context("audio_query が失敗しました")?
+        .json()
+        .context("audio_query response をJSONとして読み込めません")?;
+    query["speedScale"] = json!(request.speed);
+    query["pitchScale"] = json!(request.pitch);
+    let response = client
+        .post(synthesis_url)
+        .query(&[("speaker", speaker.to_string())])
+        .json(&query)
+        .send()
+        .context("synthesis request に失敗しました")?
+        .error_for_status()
+        .context("synthesis が失敗しました")?
+        .bytes()
+        .context("synthesis response を読み込めません")?;
+    decode_wav_audio(&response)
+}
+
+pub fn decode_wav_audio(bytes: &[u8]) -> Result<AudioBuffer> {
+    let mut cursor = Cursor::new(bytes);
+    let mut header = [0u8; 12];
+    cursor
+        .read_exact(&mut header)
+        .context("WAV header を読み込めません")?;
+    if &header[0..4] != b"RIFF" || &header[8..12] != b"WAVE" {
+        bail!("WAV RIFF/WAVE header ではありません");
+    }
+
+    let mut format: Option<(u16, u16, u32, u16)> = None;
+    let mut data = Vec::new();
+    while (cursor.position() as usize) + 8 <= bytes.len() {
+        let mut chunk_header = [0u8; 8];
+        cursor
+            .read_exact(&mut chunk_header)
+            .context("WAV chunk header を読み込めません")?;
+        let chunk_id = &chunk_header[0..4];
+        let chunk_size = u32::from_le_bytes(chunk_header[4..8].try_into().unwrap()) as usize;
+        if (cursor.position() as usize) + chunk_size > bytes.len() {
+            bail!("WAV chunk size が不正です");
+        }
+        let mut chunk = vec![0; chunk_size];
+        cursor
+            .read_exact(&mut chunk)
+            .context("WAV chunk を読み込めません")?;
+        if chunk_size % 2 == 1 && (cursor.position() as usize) < bytes.len() {
+            let mut padding = [0u8; 1];
+            cursor
+                .read_exact(&mut padding)
+                .context("WAV chunk padding を読み込めません")?;
+        }
+        match chunk_id {
+            b"fmt " => {
+                if chunk.len() < 16 {
+                    bail!("WAV fmt chunk が短すぎます");
+                }
+                let audio_format = u16::from_le_bytes(chunk[0..2].try_into().unwrap());
+                let channels = u16::from_le_bytes(chunk[2..4].try_into().unwrap());
+                let sample_rate = u32::from_le_bytes(chunk[4..8].try_into().unwrap());
+                let bits_per_sample = u16::from_le_bytes(chunk[14..16].try_into().unwrap());
+                format = Some((audio_format, channels, sample_rate, bits_per_sample));
+            }
+            b"data" => data = chunk,
+            _ => {}
+        }
+    }
+    let (audio_format, channels, sample_rate, bits_per_sample) =
+        format.context("WAV fmt chunk が見つかりません")?;
+    if channels == 0 {
+        bail!("WAV channels が 0 です");
+    }
+    let samples = decode_wav_samples(audio_format, bits_per_sample, &data)?;
+    Ok(AudioBuffer {
+        sample_rate,
+        channels,
+        samples,
+    })
+}
+
+fn decode_wav_samples(audio_format: u16, bits_per_sample: u16, data: &[u8]) -> Result<Vec<f32>> {
+    match (audio_format, bits_per_sample) {
+        (1, 16) => Ok(data
+            .chunks_exact(2)
+            .map(|bytes| {
+                let value = i16::from_le_bytes(bytes.try_into().unwrap());
+                f32::from(value) / f32::from(i16::MAX)
+            })
+            .collect()),
+        (1, 24) => Ok(data
+            .chunks_exact(3)
+            .map(|bytes| {
+                let value = i32::from_le_bytes([
+                    bytes[0],
+                    bytes[1],
+                    bytes[2],
+                    if bytes[2] & 0x80 == 0 { 0 } else { 0xff },
+                ]);
+                value as f32 / 8_388_607.0
+            })
+            .collect()),
+        (1, 32) => Ok(data
+            .chunks_exact(4)
+            .map(|bytes| {
+                let value = i32::from_le_bytes(bytes.try_into().unwrap());
+                value as f32 / i32::MAX as f32
+            })
+            .collect()),
+        (3, 32) => Ok(data
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()).clamp(-1.0, 1.0))
+            .collect()),
+        _ => bail!("未対応のWAV形式です: format={audio_format}, bits={bits_per_sample}"),
+    }
+}
+
+pub fn encode_wav_audio(buffer: &AudioBuffer) -> Vec<u8> {
+    let bytes_per_sample = 2u16;
+    let block_align = buffer.channels * bytes_per_sample;
+    let byte_rate = buffer.sample_rate * u32::from(block_align);
+    let data_size = buffer.samples.len() as u32 * u32::from(bytes_per_sample);
+    let mut bytes = Vec::with_capacity(44 + data_size as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&buffer.channels.to_le_bytes());
+    bytes.extend_from_slice(&buffer.sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&byte_rate.to_le_bytes());
+    bytes.extend_from_slice(&block_align.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_size.to_le_bytes());
+    for sample in &buffer.samples {
+        let value = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+pub fn save_wav_audio(buffer: &AudioBuffer, path: impl AsRef<Path>) -> Result<()> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "WAV保存先ディレクトリを作成できません: {}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::write(path, encode_wav_audio(buffer))
+        .with_context(|| format!("WAVを保存できません: {}", path.display()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -560,7 +851,9 @@ pub fn import_asset(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
 
     fn sample_project(asset_path: PathBuf) -> Project {
         Project {
@@ -668,5 +961,82 @@ mod tests {
         assert_eq!(asset.path, PathBuf::from("media/image/source.png"));
         assert!(dir.path().join(asset.path).exists());
         Ok(())
+    }
+
+    #[test]
+    fn wav_audio_round_trip() -> Result<()> {
+        let buffer = AudioBuffer {
+            sample_rate: 24_000,
+            channels: 1,
+            samples: vec![-1.0, 0.0, 1.0],
+        };
+
+        let bytes = encode_wav_audio(&buffer);
+        let decoded = decode_wav_audio(&bytes)?;
+
+        assert_eq!(decoded.sample_rate, 24_000);
+        assert_eq!(decoded.channels, 1);
+        assert_eq!(decoded.samples.len(), 3);
+        assert!(decoded.samples[0] < -0.99);
+        assert!(decoded.samples[2] > 0.99);
+        Ok(())
+    }
+
+    #[test]
+    fn voicevox_provider_calls_audio_query_and_synthesis() -> Result<()> {
+        let wav = encode_wav_audio(&AudioBuffer {
+            sample_rate: 24_000,
+            channels: 1,
+            samples: vec![0.0, 0.25, -0.25],
+        });
+        let endpoint = start_voicevox_mock(wav);
+        let provider = VoicevoxProvider::new(endpoint);
+
+        let audio = provider.synthesize(SynthesisRequest {
+            speaker: "1".to_string(),
+            text: "こんにちは".to_string(),
+            speed: 1.2,
+            pitch: 0.1,
+            emotion: Some("neutral".to_string()),
+        })?;
+
+        assert_eq!(audio.sample_rate, 24_000);
+        assert_eq!(audio.channels, 1);
+        assert_eq!(audio.samples.len(), 3);
+        Ok(())
+    }
+
+    fn start_voicevox_mock(wav: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for index in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 4096];
+                let size = stream.read(&mut request).unwrap();
+                let request_text = String::from_utf8_lossy(&request[..size]);
+                if index == 0 {
+                    assert!(request_text.starts_with("POST /audio_query"));
+                    let body = r#"{"speedScale":1.0,"pitchScale":0.0}"#;
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                    .unwrap();
+                } else {
+                    assert!(request_text.starts_with("POST /synthesis"));
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: audio/wav\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        wav.len()
+                    )
+                    .unwrap();
+                    stream.write_all(&wav).unwrap();
+                }
+            }
+        });
+        format!("http://{address}")
     }
 }

@@ -2,9 +2,10 @@ use ab_glyph::{point, Font, FontArc, GlyphId, PxScale, ScaleFont};
 use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
-    AnimatedProperty, Animation, AssetKind, AudioLayer, Crop, Easing, Effect, Layer, LayerContent,
-    Mask, Project, SubtitleLayer, TextAlign, TextLayer, TextShadow, TextStroke, Transform,
-    Transition, VideoLayer, WipeShape,
+    save_wav_audio, synthesize_with_default_provider, AnimatedProperty, Animation, AssetKind,
+    AudioLayer, Crop, Easing, Effect, Layer, LayerContent, Mask, Project, SubtitleLayer,
+    SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke, Transform, Transition,
+    VideoLayer, VoiceLayer, WipeShape,
 };
 use std::env;
 use std::fs;
@@ -219,7 +220,10 @@ impl MediaPlan {
                     let path = asset_path(project, options, &content.asset_id, AssetKind::Audio)?;
                     audio_layers.push(PlannedAudioLayer::new(layer, content, path));
                 }
-                LayerContent::Voice(_) => {}
+                LayerContent::Voice(content) => {
+                    let path = synthesize_voice_layer(options, layer, content)?;
+                    audio_layers.push(PlannedAudioLayer::from_voice(layer, path));
+                }
                 LayerContent::Image(_) | LayerContent::Text(_) | LayerContent::Subtitle(_) => {}
             }
         }
@@ -428,6 +432,16 @@ impl PlannedAudioLayer {
         }
     }
 
+    fn from_voice(layer: &Layer, path: PathBuf) -> Self {
+        Self {
+            path,
+            start: layer.start,
+            duration: layer.duration,
+            trim_start: 0.0,
+            trim_end: Some(layer.duration),
+        }
+    }
+
     fn audio_filter(&self, input_index: usize, label: &str) -> String {
         let trim_end = self
             .trim_end
@@ -439,6 +453,58 @@ impl PlannedAudioLayer {
             self.trim_start, trim_end
         )
     }
+}
+
+fn synthesize_voice_layer(
+    options: &RenderOptions,
+    layer: &Layer,
+    content: &VoiceLayer,
+) -> Result<PathBuf> {
+    let path = voice_cache_path(options, layer, content);
+    if path.exists() {
+        return Ok(path);
+    }
+
+    let buffer = synthesize_with_default_provider(
+        content.provider,
+        SynthesisRequest {
+            speaker: content.speaker.clone(),
+            text: content.text.clone(),
+            speed: content.speed,
+            pitch: content.pitch,
+            emotion: content.emotion.clone(),
+        },
+    )
+    .with_context(|| format!("Voice layer の音声合成に失敗しました: {}", layer.id))?;
+    save_wav_audio(&buffer, &path)?;
+    Ok(path)
+}
+
+fn voice_cache_path(options: &RenderOptions, layer: &Layer, content: &VoiceLayer) -> PathBuf {
+    let key = format!(
+        "{:?}\0{}\0{}\0{}\0{}\0{:?}\0{}\0{}",
+        content.provider,
+        content.speaker,
+        content.text,
+        content.speed,
+        content.pitch,
+        content.emotion,
+        layer.start,
+        layer.duration
+    );
+    options
+        .project_root
+        .join("cache/tts")
+        .join(format!("voice-{:016x}.wav", stable_hash(key.as_bytes())))
+}
+
+fn stable_hash(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 fn asset_path(
@@ -1672,8 +1738,11 @@ mod tests {
     use mm_core::{
         AnimatedProperty, Animation, Asset, AssetKind, AssetMode, AudioLayer, Crop, Easing, Effect,
         ImageLayer, Keyframe, Mask, ProjectSettings, SubtitleLayer, TextLayer, Track, TrackKind,
-        Transition, VideoLayer, WipeShape,
+        Transition, TtsProviderKind, VideoLayer, VoiceLayer, WipeShape,
     };
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
 
     fn text_project() -> Project {
         Project {
@@ -2091,6 +2160,70 @@ mod tests {
     }
 
     #[test]
+    fn media_plan_synthesizes_voice_layer_to_cached_wav() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let endpoint = start_voicevox_mock(mm_core::encode_wav_audio(&mm_core::AudioBuffer {
+            sample_rate: 24_000,
+            channels: 1,
+            samples: vec![0.0, 0.4, -0.4, 0.0],
+        }));
+        env::set_var("MM_VOICEVOX_ENDPOINT", endpoint);
+        let project = Project {
+            settings: ProjectSettings {
+                title: "音声合成".to_string(),
+                width: 64,
+                height: 64,
+                fps: 10,
+                sample_rate: 48000,
+                duration: 0.5,
+                output: PathBuf::from("output/movie.mp4"),
+                asset_mode: AssetMode::Copy,
+                ffmpeg: None,
+            },
+            assets: vec![],
+            tracks: vec![Track {
+                id: "a1".to_string(),
+                name: "A1".to_string(),
+                kind: TrackKind::Audio,
+                layers: vec![Layer {
+                    id: "voice".to_string(),
+                    start: 0.1,
+                    duration: 0.4,
+                    z_index: 0,
+                    content: LayerContent::Voice(VoiceLayer {
+                        provider: TtsProviderKind::Voicevox,
+                        speaker: "1".to_string(),
+                        text: "こんにちは".to_string(),
+                        speed: 1.0,
+                        pitch: 0.0,
+                        emotion: None,
+                    }),
+                    transform: Transform::default(),
+                    effects: vec![],
+                    animations: vec![],
+                    transition: None,
+                }],
+            }],
+            scenes: vec![],
+            plugins: vec![],
+        };
+        let options = RenderOptions::new(dir.path(), "output.mp4");
+
+        let plan = MediaPlan::new(&project, &options)?;
+
+        env::remove_var("MM_VOICEVOX_ENDPOINT");
+        assert_eq!(plan.audio_layers.len(), 1);
+        assert!(plan.audio_layers[0].path.exists());
+        assert!(plan.audio_layers[0]
+            .path
+            .starts_with(dir.path().join("cache/tts")));
+        assert_eq!(plan.audio_layers[0].start, 0.1);
+        assert_eq!(plan.audio_layers[0].trim_start, 0.0);
+        assert_eq!(plan.audio_layers[0].trim_end, Some(0.4));
+        Ok(())
+    }
+
+    #[test]
     fn render_project_muxes_video_and_audio_layers_when_ffmpeg_is_available() -> Result<()> {
         let Ok(ffmpeg) = which::which("ffmpeg") else {
             return Ok(());
@@ -2263,5 +2396,39 @@ mod tests {
 
     fn has_non_background_pixel(frame: &RgbaImage, background: Rgba<u8>) -> bool {
         frame.pixels().any(|pixel| pixel != &background)
+    }
+
+    fn start_voicevox_mock(wav: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for index in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 4096];
+                let size = stream.read(&mut request).unwrap();
+                let request_text = String::from_utf8_lossy(&request[..size]);
+                if index == 0 {
+                    assert!(request_text.starts_with("POST /audio_query"));
+                    let body = r#"{"speedScale":1.0,"pitchScale":0.0}"#;
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                    .unwrap();
+                } else {
+                    assert!(request_text.starts_with("POST /synthesis"));
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: audio/wav\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        wav.len()
+                    )
+                    .unwrap();
+                    stream.write_all(&wav).unwrap();
+                }
+            }
+        });
+        format!("http://{address}")
     }
 }
