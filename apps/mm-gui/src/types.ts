@@ -42,6 +42,17 @@ export interface ProjectSettings {
   output: string;
 }
 
+export type PluginRepository = "github" | "gitlab" | "url" | "local";
+
+export interface PluginDeclaration {
+  repository: PluginRepository;
+  owner?: string;
+  repo?: string;
+  version?: string;
+  url?: string;
+  path?: string;
+}
+
 export interface Asset {
   id: string;
   kind: AssetKind;
@@ -127,6 +138,7 @@ export interface ProjectState {
   tracks: Track[];
   layers: TimelineLayer[];
   scenes: Scene[];
+  plugins: PluginDeclaration[];
 }
 
 export interface PreviewState {
