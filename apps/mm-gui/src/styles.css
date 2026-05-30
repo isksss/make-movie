@@ -72,6 +72,16 @@ button.selected {
   gap: 8px;
 }
 
+.command-status {
+  color: #a8bac4;
+  font-size: 12px;
+  max-width: 240px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .toolbar button,
 .preview-controls button,
 .timeline-toolbar button {

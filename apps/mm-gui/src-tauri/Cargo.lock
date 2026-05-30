@@ -2730,6 +2730,7 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-build",
+ "tempfile",
  "toml 0.8.23",
 ]
 
