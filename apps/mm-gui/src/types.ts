@@ -23,7 +23,11 @@ export type AnimatedProperty =
   | "rotation"
   | "opacity"
   | "width"
-  | "height";
+  | "height"
+  | "crop_x"
+  | "crop_y"
+  | "crop_width"
+  | "crop_height";
 export type EasingKind =
   | "linear"
   | "ease_in"

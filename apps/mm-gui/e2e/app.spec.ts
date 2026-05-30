@@ -248,15 +248,17 @@ test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page 
     .click();
   await expect(page.getByRole("combobox", { name: "Fit", exact: true })).toHaveValue("contain");
 
-  await page.getByLabel("Crop X").fill("10");
-  await page.getByLabel("Crop Y").fill("20");
-  await page.getByLabel("Crop Width").fill("320");
-  await page.getByLabel("Crop Height").fill("180");
+  await page.getByRole("spinbutton", { name: "Crop X", exact: true }).fill("10");
+  await page.getByRole("spinbutton", { name: "Crop Y", exact: true }).fill("20");
+  await page.getByRole("spinbutton", { name: "Crop Width", exact: true }).fill("320");
+  await page.getByRole("spinbutton", { name: "Crop Height", exact: true }).fill("180");
   await page.getByRole("combobox", { name: "Mask", exact: true }).selectOption("rounded_rect");
   await page.getByRole("spinbutton", { name: "Mask Radius", exact: true }).fill("24");
   await page.getByRole("combobox", { name: "Fit", exact: true }).selectOption("blur_background");
 
-  await expect(page.getByLabel("Crop Width")).toHaveValue("320");
+  await expect(page.getByRole("spinbutton", { name: "Crop Width", exact: true })).toHaveValue(
+    "320",
+  );
   await expect(page.getByRole("combobox", { name: "Mask", exact: true })).toHaveValue(
     "rounded_rect",
   );
@@ -431,11 +433,11 @@ test("PropertyからKeyframeを編集しUndo/Redoできる", async ({ page }) =>
   });
   await expect(property).toHaveValue("none");
 
-  await property.selectOption("opacity");
+  await property.selectOption("crop_width");
   await easing.selectOption("ease_in_out");
   await keyframe2Time.fill("1.5");
   await keyframe2Value.fill("0.25");
-  await expect(property).toHaveValue("opacity");
+  await expect(property).toHaveValue("crop_width");
   await expect(easing).toHaveValue("ease_in_out");
   await expect(keyframe2Time).toHaveValue("1.5");
   await expect(keyframe2Value).toHaveValue("0.25");
@@ -453,7 +455,7 @@ test("PropertyからKeyframeを編集しUndo/Redoできる", async ({ page }) =>
   await expect(property).toHaveValue("none");
 
   await page.getByRole("button", { name: "Redo" }).click();
-  await expect(property).toHaveValue("opacity");
+  await expect(property).toHaveValue("crop_width");
 });
 
 test("TTS編集でProvider/Speaker/Text/Speed/Pitch/Emotionを編集しUndo/Redoできる", async ({

@@ -1,5 +1,6 @@
 import {
   cropRect,
+  layerAnimation,
   layerTransform,
   layerTransition,
   textLayerStyle,
@@ -9,8 +10,12 @@ import type {
   Asset,
   AssetKind,
   AssetMode,
+  AnimatedProperty,
+  EasingKind,
   FitMode,
+  Keyframe,
   LayerEffect,
+  LayerAnimation,
   LayerTransition,
   PluginDeclaration,
   PluginRepository,
@@ -39,7 +44,9 @@ type Section =
   | "transition"
   | "transitionShape"
   | "transitionBorder"
-  | "transitionShadow";
+  | "transitionShadow"
+  | "animation"
+  | "keyframe";
 
 export function serializeProjectToToml(project: ProjectState): string {
   const lines: string[] = [
@@ -116,6 +123,8 @@ export function parseProjectToml(
   let currentPlugin: PluginDeclaration | null = null;
   let currentTrack: Track | null = null;
   let currentLayer: TimelineLayer | null = null;
+  let currentAnimation: LayerAnimation | null = null;
+  let currentKeyframe: Keyframe | null = null;
 
   for (const rawLine of toml.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -199,6 +208,18 @@ export function parseProjectToml(
       section = "transitionShadow";
       continue;
     }
+    if (line === "[[tracks.layers.animations]]") {
+      section = "animation";
+      currentAnimation = layerAnimation();
+      currentLayer?.animations.push(currentAnimation);
+      continue;
+    }
+    if (line === "[[tracks.layers.animations.keyframes]]") {
+      section = "keyframe";
+      currentKeyframe = { time: 0, value: 0 };
+      currentAnimation?.keyframes.push(currentKeyframe);
+      continue;
+    }
 
     const [key, rawValue] = splitTomlPair(line);
     if (!key || rawValue === undefined) {
@@ -213,6 +234,8 @@ export function parseProjectToml(
       currentPlugin,
       currentTrack,
       currentLayer,
+      currentAnimation,
+      currentKeyframe,
     );
   }
 
@@ -457,6 +480,8 @@ function assignValue(
   currentPlugin: PluginDeclaration | null,
   currentTrack: Track | null,
   currentLayer: TimelineLayer | null,
+  currentAnimation: LayerAnimation | null,
+  currentKeyframe: Keyframe | null,
 ) {
   if (section === "settings") {
     assignSettings(project, key, value);
@@ -496,6 +521,10 @@ function assignValue(
     assignTransitionBorder(currentLayer, key, value);
   } else if (section === "transitionShadow" && currentLayer) {
     assignTransitionShadow(currentLayer, key, value);
+  } else if (section === "animation" && currentAnimation) {
+    assignAnimation(currentAnimation, key, value);
+  } else if (section === "keyframe" && currentKeyframe) {
+    assignKeyframe(currentKeyframe, key, value);
   }
 }
 
@@ -668,6 +697,62 @@ function assignTransitionShadow(layer: TimelineLayer, key: string, value: string
   } else if (key === "blur") {
     layer.transition = { ...layer.transition, wipeShadowBlur: Number(value) };
   }
+}
+
+function assignAnimation(animation: LayerAnimation, key: string, value: string | number) {
+  if (key === "property") {
+    animation.property = parseAnimatedProperty(value);
+    if (
+      animation.keyframes.length === 2 &&
+      animation.keyframes.every((keyframe) => keyframe.value <= 1)
+    ) {
+      animation.keyframes = [];
+    }
+  } else if (key === "easing") {
+    animation.easing = parseEasing(value);
+  }
+}
+
+function assignKeyframe(keyframe: Keyframe, key: string, value: string | number) {
+  if (key === "time" || key === "value") {
+    keyframe[key] = Number(value);
+  }
+}
+
+function parseAnimatedProperty(value: string | number): AnimatedProperty {
+  const property = String(value);
+  if (
+    property === "x" ||
+    property === "y" ||
+    property === "scale" ||
+    property === "rotation" ||
+    property === "opacity" ||
+    property === "width" ||
+    property === "height" ||
+    property === "crop_x" ||
+    property === "crop_y" ||
+    property === "crop_width" ||
+    property === "crop_height"
+  ) {
+    return property;
+  }
+  return "none";
+}
+
+function parseEasing(value: string | number): EasingKind {
+  const easing = String(value);
+  if (
+    easing === "linear" ||
+    easing === "ease_in" ||
+    easing === "ease_out" ||
+    easing === "ease_in_out" ||
+    easing === "ease_out_back" ||
+    easing === "bounce" ||
+    easing === "elastic"
+  ) {
+    return easing;
+  }
+  return "linear";
 }
 
 function parseTransitionKind(value: string | number): LayerTransition["kind"] {
