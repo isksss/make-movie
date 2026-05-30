@@ -1,6 +1,6 @@
 use mm_core::{
-    import_asset as import_core_asset, load_project as load_core_project,
-    save_project as save_core_project,
+    import_asset as import_core_asset, import_asset_into_project as import_core_asset_into_project,
+    load_project as load_core_project, save_project as save_core_project,
 };
 use mm_plugin_runtime::{PluginManager, PluginReference};
 use mm_render::{render_project, RenderOptions};
@@ -43,6 +43,17 @@ fn import_asset(
 }
 
 #[tauri::command]
+fn import_asset_into_project(
+    project_path: String,
+    source_path: String,
+    kind: mm_core::AssetKind,
+) -> Result<String, String> {
+    let project = import_core_asset_into_project(project_path, source_path, kind)
+        .map_err(|error| error.to_string())?;
+    toml::to_string_pretty(&project).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn install_plugin(name: String) -> Result<(), String> {
     plugin_manager()
         .install(PluginReference::named(name))
@@ -78,6 +89,7 @@ pub fn run() {
             save_project,
             build_project,
             import_asset,
+            import_asset_into_project,
             install_plugin,
             update_plugin,
             remove_plugin
@@ -116,6 +128,17 @@ mod tests {
         .expect("asset を取り込める");
         assert!(asset.contains("kind = \"image\""));
         assert!(dir.path().join("media/image/source.png").exists());
+
+        let project = import_asset_into_project(
+            project_path.display().to_string(),
+            source_path.display().to_string(),
+            AssetKind::Image,
+        )
+        .expect("asset を project へ登録して配置できる");
+        assert!(project.contains("[[assets]]"));
+        assert!(project.contains("[[tracks.layers]]"));
+        let saved = std::fs::read_to_string(&project_path).expect("project を読める");
+        assert!(saved.contains("[[assets]]"));
     }
 
     #[test]
