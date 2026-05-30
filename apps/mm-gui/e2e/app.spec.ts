@@ -208,6 +208,32 @@ test("PropertyからCrop/Mask/Fitを編集しUndo/Redoできる", async ({ page 
   await expect(page.getByLabel("Fit")).toHaveValue("blur_background");
 });
 
+test("PropertyからTrimを編集しUndo/Redoできる", async ({ page }) => {
+  await page.goto("/");
+  await useEnglish(page);
+
+  await page
+    .getByRole("region", { name: "Timeline" })
+    .getByRole("button", { name: "Voice Audio" })
+    .click();
+
+  const trimStart = page.getByRole("spinbutton", { name: "Trim Start", exact: true });
+  const trimEnd = page.getByRole("spinbutton", { name: "Trim End", exact: true });
+  await trimStart.fill("0.25");
+  await trimEnd.fill("1.5");
+  await expect(trimStart).toHaveValue("0.25");
+  await expect(trimEnd).toHaveValue("1.5");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(trimEnd).toHaveValue("0");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(trimStart).toHaveValue("0");
+
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(trimStart).toHaveValue("0.25");
+});
+
 test("PropertyからTransitionを編集しUndo/Redoできる", async ({ page }) => {
   await page.goto("/");
   await useEnglish(page);

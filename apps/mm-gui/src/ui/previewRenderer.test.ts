@@ -16,6 +16,7 @@ describe("previewRenderer", () => {
 
     expect(items.map((item) => item.layer.id)).toEqual([
       "voice-main",
+      "voice-audio",
       "intro-image",
       "title",
       "subtitle-main",
