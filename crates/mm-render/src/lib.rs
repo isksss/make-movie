@@ -798,7 +798,7 @@ fn draw_layer_content(
                 .to_rgba8();
             let image = apply_crop(image, content.crop);
             let image = apply_image_effects(image, &layer.effects);
-            let image = apply_mask(image, content.mask.as_ref());
+            let image = apply_mask(image, content.mask.as_ref(), &options.project_root)?;
             draw_image(frame, &image, transform, content.fit);
         }
         LayerContent::Text(content) => {
@@ -1194,14 +1194,15 @@ fn apply_crop(image: RgbaImage, crop: Option<Crop>) -> RgbaImage {
     imageops::crop_imm(&image, crop.x, crop.y, width, height).to_image()
 }
 
-fn apply_mask(mut image: RgbaImage, mask: Option<&Mask>) -> RgbaImage {
+fn apply_mask(mut image: RgbaImage, mask: Option<&Mask>, project_root: &Path) -> Result<RgbaImage> {
     match mask {
         Some(Mask::Circle) => apply_ellipse_mask(&mut image, true),
         Some(Mask::Ellipse) => apply_ellipse_mask(&mut image, false),
         Some(Mask::RoundedRect { radius }) => apply_rounded_rect_mask(&mut image, *radius),
-        Some(Mask::Svg { .. }) | None => {}
+        Some(Mask::Svg { path }) => apply_svg_mask(&mut image, project_root, path)?,
+        None => {}
     }
-    image
+    Ok(image)
 }
 
 fn apply_ellipse_mask(image: &mut RgbaImage, force_circle: bool) {
@@ -1255,6 +1256,208 @@ fn apply_rounded_rect_mask(image: &mut RgbaImage, radius: f32) {
             pixel[3] = 0;
         }
     }
+}
+
+fn apply_svg_mask(image: &mut RgbaImage, project_root: &Path, path: &Path) -> Result<()> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project_root.join(path)
+    };
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("SVG mask を読み込めません: {}", path.display()))?;
+    let document = roxmltree::Document::parse(&text)
+        .with_context(|| format!("SVG mask を parse できません: {}", path.display()))?;
+    let root = document.root_element();
+    let svg_width = svg_length(root.attribute("width")).unwrap_or(image.width() as f32);
+    let svg_height = svg_length(root.attribute("height")).unwrap_or(image.height() as f32);
+    let scale_x = image.width() as f32 / svg_width.max(1.0);
+    let scale_y = image.height() as f32 / svg_height.max(1.0);
+    let mut mask = vec![0u8; (image.width() * image.height()) as usize];
+    let mut painted = false;
+
+    for node in document.descendants().filter(|node| node.is_element()) {
+        let alpha = svg_paint_alpha(&node);
+        if alpha == 0 {
+            continue;
+        }
+        match node.tag_name().name() {
+            "rect" => {
+                painted |= paint_svg_rect(
+                    &mut mask,
+                    image.width(),
+                    image.height(),
+                    &node,
+                    alpha,
+                    scale_x,
+                    scale_y,
+                );
+            }
+            "circle" => {
+                painted |= paint_svg_circle(
+                    &mut mask,
+                    image.width(),
+                    image.height(),
+                    &node,
+                    alpha,
+                    scale_x,
+                    scale_y,
+                );
+            }
+            "ellipse" => {
+                painted |= paint_svg_ellipse(
+                    &mut mask,
+                    image.width(),
+                    image.height(),
+                    &node,
+                    alpha,
+                    scale_x,
+                    scale_y,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    if !painted {
+        bail!(
+            "SVG mask に対応図形がありません: {} (rect/circle/ellipse)",
+            path.display()
+        );
+    }
+
+    for (index, pixel) in image.pixels_mut().enumerate() {
+        pixel[3] = ((u16::from(pixel[3]) * u16::from(mask[index])) / 255) as u8;
+    }
+    Ok(())
+}
+
+fn paint_svg_rect(
+    mask: &mut [u8],
+    width: u32,
+    height: u32,
+    node: &roxmltree::Node<'_, '_>,
+    alpha: u8,
+    scale_x: f32,
+    scale_y: f32,
+) -> bool {
+    let x = svg_length(node.attribute("x")).unwrap_or(0.0) * scale_x;
+    let y = svg_length(node.attribute("y")).unwrap_or(0.0) * scale_y;
+    let rect_width = svg_length(node.attribute("width")).unwrap_or(0.0) * scale_x;
+    let rect_height = svg_length(node.attribute("height")).unwrap_or(0.0) * scale_y;
+    if rect_width <= 0.0 || rect_height <= 0.0 {
+        return false;
+    }
+    let radius = svg_length(node.attribute("rx"))
+        .or_else(|| svg_length(node.attribute("ry")))
+        .unwrap_or(0.0)
+        * scale_x.min(scale_y);
+    let mut painted = false;
+    for py in 0..height {
+        for px in 0..width {
+            let cx = px as f32 + 0.5;
+            let cy = py as f32 + 0.5;
+            let inside = if radius > 0.0 {
+                rounded_rect_signed_distance(cx, cy, x, y, rect_width, rect_height, radius) <= 0.0
+            } else {
+                x <= cx && cx < x + rect_width && y <= cy && cy < y + rect_height
+            };
+            if inside {
+                mask[(py * width + px) as usize] = mask[(py * width + px) as usize].max(alpha);
+                painted = true;
+            }
+        }
+    }
+    painted
+}
+
+fn paint_svg_circle(
+    mask: &mut [u8],
+    width: u32,
+    height: u32,
+    node: &roxmltree::Node<'_, '_>,
+    alpha: u8,
+    scale_x: f32,
+    scale_y: f32,
+) -> bool {
+    let cx = svg_length(node.attribute("cx")).unwrap_or(0.0) * scale_x;
+    let cy = svg_length(node.attribute("cy")).unwrap_or(0.0) * scale_y;
+    let radius = svg_length(node.attribute("r")).unwrap_or(0.0) * scale_x.min(scale_y);
+    paint_svg_ellipse_pixels(mask, width, height, cx, cy, radius, radius, alpha)
+}
+
+fn paint_svg_ellipse(
+    mask: &mut [u8],
+    width: u32,
+    height: u32,
+    node: &roxmltree::Node<'_, '_>,
+    alpha: u8,
+    scale_x: f32,
+    scale_y: f32,
+) -> bool {
+    let cx = svg_length(node.attribute("cx")).unwrap_or(0.0) * scale_x;
+    let cy = svg_length(node.attribute("cy")).unwrap_or(0.0) * scale_y;
+    let rx = svg_length(node.attribute("rx")).unwrap_or(0.0) * scale_x;
+    let ry = svg_length(node.attribute("ry")).unwrap_or(0.0) * scale_y;
+    paint_svg_ellipse_pixels(mask, width, height, cx, cy, rx, ry, alpha)
+}
+
+fn paint_svg_ellipse_pixels(
+    mask: &mut [u8],
+    width: u32,
+    height: u32,
+    cx: f32,
+    cy: f32,
+    rx: f32,
+    ry: f32,
+    alpha: u8,
+) -> bool {
+    if rx <= 0.0 || ry <= 0.0 {
+        return false;
+    }
+    let mut painted = false;
+    for py in 0..height {
+        for px in 0..width {
+            let dx = (px as f32 + 0.5 - cx) / rx;
+            let dy = (py as f32 + 0.5 - cy) / ry;
+            if dx * dx + dy * dy <= 1.0 {
+                mask[(py * width + px) as usize] = mask[(py * width + px) as usize].max(alpha);
+                painted = true;
+            }
+        }
+    }
+    painted
+}
+
+fn svg_paint_alpha(node: &roxmltree::Node<'_, '_>) -> u8 {
+    if node.attribute("fill") == Some("none") {
+        return 0;
+    }
+    let opacity = svg_length(node.attribute("opacity")).unwrap_or(1.0)
+        * svg_length(node.attribute("fill-opacity")).unwrap_or(1.0);
+    let luminance = node
+        .attribute("fill")
+        .and_then(parse_color)
+        .map(|color| {
+            (0.2126 * f32::from(color[0])
+                + 0.7152 * f32::from(color[1])
+                + 0.0722 * f32::from(color[2]))
+                / 255.0
+        })
+        .unwrap_or(1.0);
+    (opacity.clamp(0.0, 1.0) * luminance.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+fn svg_length(value: Option<&str>) -> Option<f32> {
+    let value = value?.trim();
+    let end = value
+        .char_indices()
+        .take_while(|(_, character)| {
+            character.is_ascii_digit() || matches!(character, '.' | '-' | '+')
+        })
+        .map(|(index, character)| index + character.len_utf8())
+        .last()?;
+    value[..end].parse().ok()
 }
 
 fn adjust_saturation(image: &RgbaImage, amount: f32) -> RgbaImage {
@@ -2186,7 +2389,7 @@ mod tests {
                 height: 5,
             }),
         );
-        let masked = apply_mask(cropped, Some(&Mask::Circle));
+        let masked = apply_mask(cropped, Some(&Mask::Circle), Path::new(".")).unwrap();
         let blurred = apply_image_effects(masked, &[Effect::MotionBlur { amount: 2.0 }]);
         let rotated = rotate_image(&blurred, 45.0);
 
@@ -2194,6 +2397,49 @@ mod tests {
         assert_eq!(blurred.get_pixel(0, 0)[3], 0);
         assert!(rotated.width() > blurred.width());
         assert!(rotated.height() > blurred.height());
+    }
+
+    #[test]
+    fn svg_mask_applies_alpha_from_white_shape() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mask_path = dir.path().join("media/mask/circle.svg");
+        std::fs::create_dir_all(mask_path.parent().unwrap())?;
+        std::fs::write(
+            &mask_path,
+            r##"<svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="10" height="10" fill="#000000"/>
+  <circle cx="5" cy="5" r="3" fill="#ffffff"/>
+</svg>"##,
+        )?;
+        let image = RgbaImage::from_pixel(10, 10, Rgba([255, 0, 0, 255]));
+
+        let masked = apply_mask(
+            image,
+            Some(&Mask::Svg {
+                path: PathBuf::from("media/mask/circle.svg"),
+            }),
+            dir.path(),
+        )?;
+
+        assert_eq!(masked.get_pixel(5, 5)[3], 255);
+        assert_eq!(masked.get_pixel(0, 0)[3], 0);
+        Ok(())
+    }
+
+    #[test]
+    fn svg_mask_reports_missing_file() {
+        let image = RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255]));
+
+        let error = apply_mask(
+            image,
+            Some(&Mask::Svg {
+                path: PathBuf::from("missing.svg"),
+            }),
+            Path::new("."),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("SVG mask を読み込めません"));
     }
 
     #[test]
