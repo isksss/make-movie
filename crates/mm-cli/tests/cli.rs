@@ -173,6 +173,69 @@ version = "2.0.0"
 }
 
 #[test]
+fn plugin_update_and_remove_use_project_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_home = dir.path().join("data");
+    let component = dir.path().join("theme.wasm");
+    fs::write(&component, b"\0asm").unwrap();
+    fs::write(
+        dir.path().join("mm.toml"),
+        format!(
+            r#"
+[[plugin]]
+repository = "local"
+name = "project-theme"
+path = "{}"
+version = "1.0.0"
+"#,
+            component.display()
+        ),
+    )
+    .unwrap();
+
+    Command::cargo_bin("mm")
+        .unwrap()
+        .current_dir(dir.path())
+        .env("XDG_DATA_HOME", &data_home)
+        .arg("plugin")
+        .arg("install")
+        .arg("--project")
+        .arg("mm.toml")
+        .assert()
+        .success();
+
+    Command::cargo_bin("mm")
+        .unwrap()
+        .current_dir(dir.path())
+        .env("XDG_DATA_HOME", &data_home)
+        .arg("plugin")
+        .arg("update")
+        .arg("project-theme")
+        .arg("--project")
+        .arg("mm.toml")
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(dir.path().join("mm.lock")).unwrap();
+    assert!(lock.contains("project-theme"));
+
+    Command::cargo_bin("mm")
+        .unwrap()
+        .current_dir(dir.path())
+        .env("XDG_DATA_HOME", &data_home)
+        .arg("plugin")
+        .arg("remove")
+        .arg("project-theme")
+        .arg("--project")
+        .arg("mm.toml")
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(dir.path().join("mm.lock")).unwrap();
+    assert!(!lock.contains("project-theme"));
+}
+
+#[test]
 fn preview_command_writes_png_frame() {
     let dir = tempfile::tempdir().unwrap();
     write_valid_project(dir.path());
