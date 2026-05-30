@@ -272,9 +272,9 @@ function appendContent(lines: string[], project: ProjectState, layer: TimelineLa
     }
     return;
   }
-  const asset = project.assets.find((item) =>
-    contentKindMatchesAsset(layer.contentKind, item.kind),
-  );
+  const asset =
+    project.assets.find((item) => item.id === layer.assetId) ??
+    project.assets.find((item) => contentKindMatchesAsset(layer.contentKind, item.kind));
   if (asset) {
     lines.push(`asset_id = ${quote(asset.id)}`);
   }
@@ -502,6 +502,8 @@ function assignContent(layer: TimelineLayer, key: string, value: string | number
     layer.fit = String(value) as FitMode;
   } else if (key === "provider") {
     layer.voice = { ...layer.voice, provider: parseTtsProvider(value) };
+  } else if (key === "asset_id") {
+    layer.assetId = String(value);
   } else if (key === "speaker") {
     layer.voice = { ...layer.voice, speaker: String(value) };
   } else if (key === "speed") {
@@ -556,6 +558,7 @@ function defaultLayer(trackId: string): TimelineLayer {
     trackId,
     label: "",
     contentKind: "image",
+    assetId: null,
     start: 0,
     duration: 1,
     trimStart: 0,
