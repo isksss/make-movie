@@ -950,6 +950,11 @@ impl SkiaFrameRenderer {
             TextAlign::Right => text_utils::Align::Right,
         };
 
+        canvas.save();
+        if transform.rotation != 0.0 {
+            canvas.rotate(transform.rotation, Some((transform.x, transform.y).into()));
+        }
+
         if let Some(shadow) = &text.shadow {
             let shadow_color = parse_color(&shadow.color).unwrap_or(Rgba([0, 0, 0, 180]));
             let mut shadow_paint = skia_text_paint(shadow_color, transform.opacity);
@@ -1002,6 +1007,7 @@ impl SkiaFrameRenderer {
             baseline_y,
             line_height,
         );
+        canvas.restore();
         Ok(())
     }
 
@@ -1362,8 +1368,8 @@ fn draw_layer_content(
     Ok(())
 }
 
-fn is_skia_native_text_supported(text: &TextLayer, transform: Transform) -> bool {
-    text.font_asset_id.is_none() && text.letter_spacing == 0.0 && transform.rotation == 0.0
+fn is_skia_native_text_supported(text: &TextLayer, _transform: Transform) -> bool {
+    text.font_asset_id.is_none() && text.letter_spacing == 0.0
 }
 
 fn skia_text_paint(color: Rgba<u8>, opacity: f32) -> Paint {
@@ -3121,6 +3127,67 @@ mod tests {
                 .pixels()
                 .any(|pixel| pixel[1] > 140 && pixel[0] < 120 && pixel[2] < 120),
             "shadow の緑の pixel がありません"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_draws_rotated_text_with_native_text() -> Result<()> {
+        let mut project = text_project();
+        project.settings.width = 220;
+        project.settings.height = 140;
+        let transform = Transform {
+            x: 64.0,
+            y: 32.0,
+            width: 130.0,
+            height: 52.0,
+            scale: 1.0,
+            rotation: 28.0,
+            opacity: 1.0,
+        };
+        let LayerContent::Text(text) = &mut project.tracks[0].layers[0].content else {
+            panic!("text layer ではありません");
+        };
+        text.text = "Skia".to_string();
+        text.font_size = 36.0;
+        text.color = "#ffffff".to_string();
+        text.align = TextAlign::Left;
+        text.stroke = Some(TextStroke {
+            color: "#ff0000".to_string(),
+            width: 2.0,
+        });
+        text.shadow = Some(TextShadow {
+            color: "#0000ff".to_string(),
+            offset_x: 6.0,
+            offset_y: 8.0,
+            blur: 0.0,
+        });
+        text.gradient = Some(TextGradient {
+            start_color: "#00ff00".to_string(),
+            end_color: "#ffffff".to_string(),
+            direction: GradientDirection::Horizontal,
+        });
+        text.font_asset_id = None;
+        text.letter_spacing = 0.0;
+        assert!(is_skia_native_text_supported(text, transform));
+        project.tracks[0].layers[0].transform = transform;
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert!(has_non_background_pixel(&frame, options.background));
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[0] > 140 && pixel[1] < 100 && pixel[2] < 100),
+            "rotated stroke の赤い pixel がありません"
+        );
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[2] > 140 && pixel[0] < 120 && pixel[1] < 120),
+            "rotated shadow の青い pixel がありません"
         );
         Ok(())
     }
