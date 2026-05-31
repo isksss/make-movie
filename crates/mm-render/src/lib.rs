@@ -829,10 +829,10 @@ fn gpu_composite_layer(
 ) -> Result<Option<GpuImageLayer>> {
     match &layer.content {
         LayerContent::Image(_) => gpu_image_layer(project, options, layer, transform, time),
-        LayerContent::Text(_) | LayerContent::Subtitle(_) => {
+        LayerContent::Video(_) | LayerContent::Text(_) | LayerContent::Subtitle(_) => {
             gpu_rasterized_layer(project, options, layer, transform, time)
         }
-        LayerContent::Video(_) | LayerContent::Audio(_) | LayerContent::Voice(_) => Ok(None),
+        LayerContent::Audio(_) | LayerContent::Voice(_) => Ok(None),
     }
 }
 
@@ -5643,6 +5643,64 @@ mod tests {
         assert!(pixel[0] > 180);
         assert!(pixel[1] < 80);
         assert!(pixel[2] < 80);
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_gpu_hybrid_composites_video_layer_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let Some(ffmpeg) = available_ffmpeg() else {
+            return Ok(());
+        };
+        let dir = tempfile::tempdir()?;
+        let video_path = dir.path().join("media/video/red.mp4");
+        std::fs::create_dir_all(video_path.parent().unwrap())?;
+        let status = Command::new(&ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:size=32x24:rate=10:duration=1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&video_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Ok(());
+        }
+        let project = video_project(
+            PathBuf::from("media/video/red.mp4"),
+            VideoLayer {
+                asset_id: "video".to_string(),
+                crop: None,
+                trim_start: Some(0.0),
+                trim_end: Some(1.0),
+                fit: None,
+            },
+        );
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.ffmpeg_path = Some(ffmpeg);
+        options.background = Rgba([0, 0, 0, 255]);
+        let layer = &project.tracks[0].layers[0];
+        let transform = resolve_layer_transform(layer, 0.2);
+
+        let gpu_layer = gpu_composite_layer(&project, &options, layer, transform, 0.2)?
+            .context("Video layer がGPU layerに変換されていません")?;
+        assert_eq!(gpu_layer.image.dimensions(), (32, 24));
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 0.2)?;
+        let pixel = frame.get_pixel(16, 12);
+
+        assert!(pixel[0] > 180);
+        assert!(pixel[1] < 80);
+        assert!(pixel[2] < 80);
+        assert_cpu_gpu_pixel_close(&project, &options, 0.2, 16, 12, 16);
         Ok(())
     }
 
