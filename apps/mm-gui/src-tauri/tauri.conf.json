@@ -4,12 +4,13 @@
   "version": "0.1.0",
   "identifier": "com.isksss.make-movie",
   "build": {
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
+    "beforeDevCommand": "corepack pnpm dev",
+    "beforeBuildCommand": "corepack pnpm build",
     "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "make-movie",

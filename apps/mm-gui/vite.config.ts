@@ -9,6 +9,6 @@ export default defineConfig({
     strictPort: true,
   },
   test: {
-    exclude: ["e2e/**", "node_modules/**", "dist/**"],
+    exclude: ["e2e/**", "e2e-tauri/**", "node_modules/**", "dist/**"],
   },
 });
