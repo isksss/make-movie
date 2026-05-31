@@ -91,8 +91,13 @@ Windows target では `.exe` 付きのファイル名を使います。
 ```bash
 bash plugin-api/sdk/generate.sh
 bash plugin-api/sdk/verify.sh
+bash plugin-api/sdk/verify-release.sh
 cargo test --manifest-path plugin-api/sdk/rust/Cargo.toml
 (cd plugin-api/sdk/go && go test ./...)
 corepack pnpm --dir plugin-api/sdk/ts test
 dotnet build plugin-api/sdk/csharp/mm-sdk-csharp.csproj
 ```
+
+`verify-release.sh` は Rust SDK の `cargo package`、TypeScript SDK の
+`npm pack --dry-run`、Go SDK の `go vet ./...` を実行し、publish 前の
+配布可能性を確認します。

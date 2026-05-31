@@ -15,6 +15,7 @@ Rust / TypeScript / Go SDKを配布するためのリリース手順です。
 ```bash
 bash plugin-api/sdk/generate.sh
 bash plugin-api/sdk/verify.sh
+bash plugin-api/sdk/verify-release.sh
 git diff --check
 ```
 
@@ -39,6 +40,7 @@ plugin-api/sdk/rust
 ```bash
 cargo fmt --manifest-path plugin-api/sdk/rust/Cargo.toml --check
 cargo test --manifest-path plugin-api/sdk/rust/Cargo.toml --all-targets
+cargo package --manifest-path plugin-api/sdk/rust/Cargo.toml --allow-dirty --no-verify --list
 cargo package --manifest-path plugin-api/sdk/rust/Cargo.toml --allow-dirty --no-verify
 cargo publish --manifest-path plugin-api/sdk/rust/Cargo.toml --dry-run --allow-dirty
 ```
@@ -70,7 +72,6 @@ corepack pnpm --dir plugin-api/sdk/ts install --frozen-lockfile
 corepack pnpm --dir plugin-api/sdk/ts test
 corepack pnpm --dir plugin-api/sdk/ts build
 (cd plugin-api/sdk/ts && npm pack --dry-run)
-(cd plugin-api/sdk/ts && npm publish --dry-run)
 ```
 
 公開:

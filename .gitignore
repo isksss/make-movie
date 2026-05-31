@@ -13,3 +13,4 @@ apps/mm-gui/test-results/
 apps/mm-gui/src-tauri/gen/
 apps/mm-gui/src-tauri/binaries/ffmpeg-*
 apps/mm-gui/src-tauri/binaries/ffprobe-*
+plugin-api/sdk/rust/Cargo.lock
