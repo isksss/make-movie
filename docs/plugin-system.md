@@ -39,6 +39,8 @@ Rust / TypeScript / Go で Plugin を開発する詳細手順は `docs/plugin-de
 
 Plugin作成の最小テンプレートは `plugin-api/templates/` を参照します。
 
+SDK配布時のリリース手順は `docs/plugin-sdk-release.md` を参照します。
+
 ## Manifest / Lock
 
 Plugin manifest と lock の schema は `plugin-api/schema/` に配置します。

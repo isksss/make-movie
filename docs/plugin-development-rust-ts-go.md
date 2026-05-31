@@ -96,6 +96,8 @@ bash plugin-api/sdk/verify.sh
 
 生成物の drift を防ぐため、SDK 更新 PR では `plugin-api/sdk/` の差分を必ず確認します。
 
+SDK配布時の詳細なリリース手順は `docs/plugin-sdk-release.md` を参照します。
+
 ## Rust Plugin
 
 ### 1. プロジェクト作成
