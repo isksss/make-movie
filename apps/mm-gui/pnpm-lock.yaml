@@ -35,6 +35,9 @@ importers:
       "@playwright/test":
         specifier: ^1.60.0
         version: 1.60.0
+      "@srsholmes/tauri-playwright":
+        specifier: ^0.2.2
+        version: 0.2.2(@playwright/test@1.60.0)
       "@tauri-apps/cli":
         specifier: ^2.11.2
         version: 2.11.2
@@ -788,6 +791,15 @@ packages:
       }
     cpu: [x64]
     os: [win32]
+
+  "@srsholmes/tauri-playwright@0.2.2":
+    resolution:
+      {
+        integrity: sha512-Q/6BrSInxePOsrxFR1wB0ALshZH92PjyF3JEcAqZumUuzwTchm4iffqa4y90XZKpVqIrLtVFMIGDdl9WmRuliQ==,
+      }
+    engines: { node: ">=18" }
+    peerDependencies:
+      "@playwright/test": ^1.40.0
 
   "@standard-schema/spec@1.1.0":
     resolution:
@@ -2519,6 +2531,10 @@ snapshots:
 
   "@rollup/rollup-win32-x64-msvc@4.60.4":
     optional: true
+
+  "@srsholmes/tauri-playwright@0.2.2(@playwright/test@1.60.0)":
+    dependencies:
+      "@playwright/test": 1.60.0
 
   "@standard-schema/spec@1.1.0": {}
 

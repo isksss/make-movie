@@ -14,7 +14,7 @@
 最低限の確認:
 
 - Rust workspace の format / clippy / test
-- GUI の lint / unit test / E2E / build
+- GUI の lint / unit test / browser E2E / Tauri E2E / build
 - Tauri backend の test / check
 - FFmpeg が利用可能な環境での CLI build または preview
 

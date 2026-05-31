@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "メインウィンドウで通常IPCとE2Eテスト用IPCを許可する。",
+  "windows": ["main"],
+  "permissions": ["core:default", "playwright:default"]
+}

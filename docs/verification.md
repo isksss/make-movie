@@ -38,8 +38,13 @@ cargo run -p mm-cli -- build --project examples/basic/mm.toml --output examples/
 corepack pnpm --dir apps/mm-gui lint
 corepack pnpm --dir apps/mm-gui test
 corepack pnpm --dir apps/mm-gui e2e
+corepack pnpm --dir apps/mm-gui e2e:tauri
 corepack pnpm --dir apps/mm-gui build
 ```
+
+`e2e` はブラウザ上の Playwright E2E、`e2e:tauri` は
+`e2e-testing` feature で Tauri 実アプリを起動して Playwright から検証します。
+`e2e:tauri` は WebKitGTK と GUI session が利用できる Linux 環境で実行します。
 
 ## Tauri
 
@@ -47,6 +52,7 @@ corepack pnpm --dir apps/mm-gui build
 corepack pnpm --dir apps/mm-gui exec tauri --version
 TAURI_TARGET_TRIPLE=x86_64-unknown-linux-gnu bash scripts/prepare-tauri-sidecars.sh
 cargo test --manifest-path apps/mm-gui/src-tauri/Cargo.toml
+cargo test --manifest-path apps/mm-gui/src-tauri/Cargo.toml --features e2e-testing
 cargo clippy --manifest-path apps/mm-gui/src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
