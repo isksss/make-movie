@@ -1,0 +1,10 @@
+{
+  "ignorePatterns": [
+    "coverage",
+    "dist",
+    "node_modules",
+    "playwright-report",
+    "src-tauri/target",
+    "test-results"
+  ]
+}
