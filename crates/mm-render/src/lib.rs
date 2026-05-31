@@ -10,7 +10,7 @@ use mm_core::{
 use skia_safe::{
     color_filters, gradient, image::CachingHint, image_filters, images, paint, surfaces,
     utils::text_utils, AlphaType, BlurStyle, Color, Color4f, ColorType, Data, Font as SkiaFont,
-    FontMgr, FontStyle, ImageInfo, MaskFilter, Paint, PathBuilder, RRect, Rect, TileMode,
+    FontMgr, FontStyle, ImageInfo, MaskFilter, Paint, PathBuilder, RRect, Rect, TileMode, Typeface,
 };
 use std::env;
 use std::fs;
@@ -20,6 +20,29 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 
 const GPU_COPY_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+const SYSTEM_FONT_CANDIDATES: &[&str] = &[
+    "/usr/share/fonts/TTF/HackGen-Regular.ttf",
+    "/usr/share/fonts/hackgen/HackGen-Regular.ttf",
+    "/usr/local/share/fonts/HackGen-Regular.ttf",
+    "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf",
+    "/usr/share/fonts/gnu-free/FreeSans.otf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/seguiemj.ttf",
+];
+const SKIA_FONT_FAMILIES: &[&str] = &[
+    "HackGen",
+    "HackGen Console",
+    "Adwaita Sans",
+    "FreeSans",
+    "DejaVu Sans",
+    "Arial Unicode MS",
+    "Arial",
+    "Segoe UI",
+];
 
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
@@ -943,9 +966,7 @@ impl SkiaFrameRenderer {
         text: &TextLayer,
         transform: Transform,
     ) -> Result<()> {
-        let typeface = FontMgr::new()
-            .legacy_make_typeface(None, FontStyle::normal())
-            .context("Skia default typeface を取得できません")?;
+        let typeface = skia_default_typeface()?;
         let font_size = text.font_size * transform.scale.max(0.01);
         let font = SkiaFont::new(typeface, font_size);
         let color = parse_color(&text.color).unwrap_or(Rgba([255, 255, 255, 255]));
@@ -2775,16 +2796,29 @@ fn load_font(
 }
 
 fn system_font_path() -> Option<PathBuf> {
-    let candidates = [
-        "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf",
-        "/usr/share/fonts/gnu-free/FreeSans.otf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-    ];
-    candidates
+    SYSTEM_FONT_CANDIDATES
         .iter()
         .map(PathBuf::from)
         .find(|path| path.exists())
+}
+
+fn skia_default_typeface() -> Result<Typeface> {
+    let font_mgr = FontMgr::new();
+    if let Some(typeface) = system_font_path()
+        .and_then(|path| fs::read(path).ok())
+        .and_then(|bytes| font_mgr.new_from_data(&bytes, None))
+    {
+        return Ok(typeface);
+    }
+    if let Some(typeface) = SKIA_FONT_FAMILIES
+        .iter()
+        .find_map(|family| font_mgr.match_family_style(*family, FontStyle::normal()))
+    {
+        return Ok(typeface);
+    }
+    font_mgr
+        .legacy_make_typeface(None, FontStyle::normal())
+        .context("Skia default typeface を取得できません")
 }
 
 fn active_subtitle_text(
@@ -2962,6 +2996,25 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
+
+    #[test]
+    fn system_font_path_prefers_hackgen_when_available() {
+        let path = system_font_path();
+        if Path::new("/usr/share/fonts/TTF/HackGen-Regular.ttf").exists() {
+            assert_eq!(
+                path.as_deref(),
+                Some(Path::new("/usr/share/fonts/TTF/HackGen-Regular.ttf"))
+            );
+        } else {
+            assert!(path.is_none_or(|font_path| font_path.exists()));
+        }
+    }
+
+    #[test]
+    fn skia_default_typeface_resolves_available_font() -> Result<()> {
+        let _typeface = skia_default_typeface()?;
+        Ok(())
+    }
 
     fn text_project() -> Project {
         Project {
