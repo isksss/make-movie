@@ -11,6 +11,14 @@ bash scripts/verify-all.sh
 この script は Rust workspace、GUI、Tauri、Plugin SDK、`git diff --check` を順に確認します。
 `dotnet` が利用できる環境では C# SDK build も実行します。`dotnet` が無い環境では C# SDK build のみ明示的に skip します。
 
+CI と近い Ubuntu 環境で検証する場合は Docker Compose を使います。
+
+```bash
+docker compose run --rm dev bash scripts/verify-all.sh
+```
+
+詳細は [Docker 開発・テスト環境](docker-development.md) を参照してください。
+
 ## Rust
 
 ```bash

@@ -1,0 +1,15 @@
+.git
+.github
+.cache
+target
+apps/mm-gui/dist
+apps/mm-gui/node_modules
+apps/mm-gui/src-tauri/target
+apps/mm-gui/src-tauri/binaries
+plugin-api/sdk/rust/target
+plugin-api/sdk/ts/node_modules
+plugin-api/sdk/ts/dist
+plugin-api/sdk/go/bin
+output
+cache
+*.log

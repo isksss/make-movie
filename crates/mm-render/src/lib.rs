@@ -29,6 +29,8 @@ const SYSTEM_FONT_CANDIDATES: &[&str] = &[
     "/usr/share/fonts/gnu-free/FreeSans.otf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "C:/Windows/Fonts/arial.ttf",
