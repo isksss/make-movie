@@ -1,14 +1,23 @@
-name: 機能追加・改善
-description: 機能追加・改善の実装チケット
-title: "[Feature]: "
+name: 実装チケット
+description: 1 Issue = 1 Task の実装作業チケット
+title: "[Task]: "
 labels: []
 body:
+  - type: input
+    id: title
+    attributes:
+      label: タイトル
+      description: Issueの目的が分かる短いタイトルを書いてください。
+      placeholder: "例: Projectモデルを追加する"
+    validations:
+      required: true
   - type: textarea
     id: goal
     attributes:
       label: 目的
       description: このIssueで達成する目的を1つだけ書いてください。
-      placeholder: "例: Rust Plugin SDKにmetadata validationを追加する。"
+      value: |
+        -
     validations:
       required: true
   - type: textarea
@@ -39,10 +48,10 @@ body:
       label: 確認手順
       description: 実行する検証コマンドや確認手順を書いてください。
       value: |
-        - [ ] cargo fmt --check
-        - [ ] cargo test
-        - [ ] cargo clippy --workspace --all-targets -- -D warnings
-        - [ ] GUI確認
+        - [ ] cargo fmt --check --all
+        - [ ] cargo test --workspace
+        - [ ] corepack pnpm --dir apps/mm-gui test
+        - [ ] corepack pnpm --dir apps/mm-gui e2e
     validations:
       required: true
   - type: textarea
