@@ -13,6 +13,24 @@ import type {
 
 export type Locale = "ja" | "en";
 
+export const localeStorageKey = "mm.locale";
+
+export function localeFromLanguage(language: string | undefined): Locale {
+  return language?.toLowerCase().startsWith("ja") ? "ja" : "en";
+}
+
+export function parseLocale(value: string | null | undefined): Locale | null {
+  return value === "ja" || value === "en" ? value : null;
+}
+
+export function initialLocale(): Locale {
+  const saved = parseLocale(globalThis.localStorage?.getItem(localeStorageKey));
+  if (saved) {
+    return saved;
+  }
+  return localeFromLanguage(globalThis.navigator?.language);
+}
+
 export const messages = {
   ja: {
     ready: "準備完了",

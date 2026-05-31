@@ -231,6 +231,28 @@ fn translate_error_message(language: CliLanguage, message: &str) -> String {
             "ffprobe が見つかりません。PATH を確認してください",
             "ffprobe was not found. Check PATH",
         ),
+        (
+            "package 出力先ディレクトリを作成できません",
+            "failed to create package output directory",
+        ),
+        ("package を作成できません", "failed to create package"),
+        (
+            "package archive を完了できません",
+            "failed to finish package archive",
+        ),
+        (
+            "package gzip stream を完了できません",
+            "failed to finish package gzip stream",
+        ),
+        ("package に追加できません", "failed to add to package"),
+        (
+            "package 対象ディレクトリを読めません",
+            "failed to read package source directory",
+        ),
+        (
+            "package 相対pathを解決できません",
+            "failed to resolve package relative path",
+        ),
     ]
     .into_iter()
     .fold(message.to_string(), |translated, (ja, en)| {
@@ -535,14 +557,16 @@ fn doctor(messages: Messages) -> Result<()> {
     Ok(())
 }
 
-fn plugin(command: PluginCommand, _messages: Messages) -> Result<()> {
+fn plugin(command: PluginCommand, messages: Messages) -> Result<()> {
     let manager = PluginManager::default();
     match command {
         PluginCommand::Install(args) => {
             if let Some(path) = args.manifest {
                 manager.install_manifest(load_manifest(path)?)?;
+                println!("{}", messages.plugin_installed);
             } else if let Some(name) = args.name {
                 manager.install(PluginReference::named(name))?;
+                println!("{}", messages.plugin_installed);
             } else {
                 let project_manager = PluginManager::new(
                     default_plugin_dir(),
@@ -552,13 +576,16 @@ fn plugin(command: PluginCommand, _messages: Messages) -> Result<()> {
                     .global_config
                     .unwrap_or_else(default_global_config_path);
                 project_manager.install_configured_plugins(global_config, args.project)?;
+                println!("{}", messages.configured_plugins_installed);
             }
         }
         PluginCommand::Update(args) => {
-            project_plugin_manager(&args.project).update(PluginReference::named(args.name))?
+            project_plugin_manager(&args.project).update(PluginReference::named(args.name))?;
+            println!("{}", messages.plugin_updated);
         }
         PluginCommand::Remove(args) => {
-            project_plugin_manager(&args.project).remove(PluginReference::named(args.name))?
+            project_plugin_manager(&args.project).remove(PluginReference::named(args.name))?;
+            println!("{}", messages.plugin_removed);
         }
     }
     Ok(())
@@ -575,6 +602,10 @@ struct Messages {
     preview_done: &'static str,
     cleanup_done: &'static str,
     package_done: &'static str,
+    plugin_installed: &'static str,
+    configured_plugins_installed: &'static str,
+    plugin_updated: &'static str,
+    plugin_removed: &'static str,
     not_found: &'static str,
 }
 
@@ -587,6 +618,10 @@ impl Messages {
                 preview_done: "preview を出力しました",
                 cleanup_done: "cleanup が完了しました",
                 package_done: "package を作成しました",
+                plugin_installed: "plugin をインストールしました",
+                configured_plugins_installed: "設定済み plugin をインストールしました",
+                plugin_updated: "plugin を更新しました",
+                plugin_removed: "plugin を削除しました",
                 not_found: "未検出",
             },
             CliLanguage::En => Self {
@@ -595,6 +630,10 @@ impl Messages {
                 preview_done: "preview exported",
                 cleanup_done: "cleanup completed",
                 package_done: "package created",
+                plugin_installed: "plugin installed",
+                configured_plugins_installed: "configured plugins installed",
+                plugin_updated: "plugin updated",
+                plugin_removed: "plugin removed",
                 not_found: "not found",
             },
         }
