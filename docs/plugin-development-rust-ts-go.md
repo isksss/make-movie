@@ -108,15 +108,28 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
+mm-sdk-rust = "0.1"
+```
+
+monorepo 内で SDK 本体を同時開発する場合だけ path 参照を使います。
+
+```toml
+[dependencies]
 mm-sdk-rust = { path = "../make-movie/plugin-api/sdk/rust" }
 ```
 
 ### 2. lifecycle 実装
 
-現在の `mm-sdk-rust` は Plugin lifecycle を実装しやすくする薄い補助層です。`MmPlugin` を実装し、Plugin 固有の状態は struct に保持します。
+`mm-sdk-rust` は crates.io から取得します。
+
+```bash
+cargo add mm-sdk-rust
+```
+
+`MmPlugin` を実装し、Plugin 固有の状態は struct に保持します。metadata は `PluginMetadata` で生成し、`export_plugin!` で `metadata` / `initialize` / `shutdown` を export します。
 
 ```rust
-use mm_sdk_rust::{MmPlugin, export_plugin};
+use mm_sdk_rust::{MmPlugin, PluginCategory, PluginMetadata, export_plugin};
 
 #[derive(Default)]
 struct MyPlugin {
@@ -125,7 +138,11 @@ struct MyPlugin {
 
 impl MmPlugin for MyPlugin {
     fn metadata(&self) -> String {
-        r#"{"name":"my-plugin","version":"0.1.0"}"#.to_string()
+        PluginMetadata::new("my-plugin", "0.1.0", PluginCategory::Utility)
+            .display_name("My Plugin")
+            .description("Rust plugin")
+            .to_json()
+            .expect("metadata must be valid")
     }
 
     fn initialize(&mut self) {
@@ -178,6 +195,13 @@ cargo test
 cargo build --release --target wasm32-unknown-unknown
 ```
 
+SDK を crates.io へ公開する前は SDK directory で dry-run します。
+
+```bash
+cd plugin-api/sdk/rust
+cargo publish --dry-run
+```
+
 make-movie 本体へ SDK や Runtime の変更を入れる場合は、repository root で実行します。
 
 ```bash
@@ -193,6 +217,7 @@ mkdir my-plugin
 cd my-plugin
 corepack pnpm init
 corepack pnpm add -D typescript
+corepack pnpm add mm-sdk-ts
 ```
 
 `package.json` は ESM と strict TypeScript を前提にします。
@@ -204,11 +229,14 @@ corepack pnpm add -D typescript
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsc",
     "test": "tsc --noEmit"
   },
+  "dependencies": {
+    "mm-sdk-ts": "^0.1.0"
+  },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }
 ```
@@ -229,16 +257,31 @@ corepack pnpm add -D typescript
 
 ### 2. lifecycle 実装
 
-現在の `mm-sdk-ts` は TypeScript 側の lifecycle interface を検証するための補助層です。
+`mm-sdk-ts` は npm から取得します。
+
+```bash
+npm install mm-sdk-ts
+```
+
+pnpm を使う場合:
+
+```bash
+corepack pnpm add mm-sdk-ts
+```
+
+`definePlugin` で lifecycle を型付けし、`metadataToJson` で make-movie が読む metadata JSON を生成します。
 
 ```ts
-import { definePlugin } from "mm-sdk-ts";
+import { definePlugin, metadataToJson } from "mm-sdk-ts";
 
 export default definePlugin({
   metadata: () =>
-    JSON.stringify({
+    metadataToJson({
       name: "my-plugin",
       version: "0.1.0",
+      category: "utility",
+      displayName: "My Plugin",
+      description: "TypeScript plugin",
     }),
   initialize: () => {
     // Plugin 初期化
@@ -313,6 +356,15 @@ bash plugin-api/sdk/verify.sh
 bash scripts/verify-all.sh
 ```
 
+SDK を npm へ公開する前は SDK directory で package 内容を確認します。
+
+```bash
+cd plugin-api/sdk/ts
+pnpm build
+npm pack --dry-run
+npm publish --dry-run
+```
+
 ## Go Plugin
 
 ### 1. プロジェクト作成
@@ -330,16 +382,31 @@ module example.com/my-plugin
 
 go 1.22
 
-require github.com/isksss/make-movie/plugin-api/sdk/go v0.0.0
+require github.com/isksss/make-movie/plugin-api/sdk/go v0.1.0
+```
 
+SDK は GitHub module path から取得します。
+
+```bash
+go get github.com/isksss/make-movie/plugin-api/sdk/go
+```
+
+monorepo 内で SDK 本体を同時開発する場合だけ `replace` を使います。
+
+```go
 replace github.com/isksss/make-movie/plugin-api/sdk/go => ../make-movie/plugin-api/sdk/go
 ```
 
-local 開発では `replace` で本体 repository の SDK を参照します。配布時は tag 付き module 参照に切り替えます。
+Go SDK を GitHub module として release する場合、tag は submodule path を prefix にします。
+
+```bash
+git tag plugin-api/sdk/go/v0.1.0
+git push origin plugin-api/sdk/go/v0.1.0
+```
 
 ### 2. lifecycle 実装
 
-現在の `mm-sdk-go` は `plugin.wit` の lifecycle を Go interface として表現する補助層です。
+`mm-sdk-go` は `plugin.wit` の lifecycle を Go interface として表現し、metadata JSON の生成と検証を提供します。
 
 ```go
 package main
@@ -353,7 +420,13 @@ type MyPlugin struct {
 var _ mmsdk.Plugin = (*MyPlugin)(nil)
 
 func (plugin *MyPlugin) Metadata() string {
-	return `{"name":"my-plugin","version":"0.1.0"}`
+	return mmsdk.MustMetadataJSON(mmsdk.Metadata{
+		Name:        "my-plugin",
+		Version:     "0.1.0",
+		Category:    mmsdk.CategoryUtility,
+		DisplayName: "My Plugin",
+		Description: "Go plugin",
+	})
 }
 
 func (plugin *MyPlugin) Initialize() error {
