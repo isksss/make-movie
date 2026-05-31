@@ -1,0 +1,32 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
+        NODE_MAJOR: ${NODE_MAJOR:-22}
+        PNPM_VERSION: ${PNPM_VERSION:-10.24.0}
+    image: make-movie-dev:ubuntu-24.04
+    working_dir: /workspace
+    environment:
+      CI: "1"
+      NO_COLOR: "1"
+      RUST_BACKTRACE: "1"
+      PLAYWRIGHT_BROWSERS_PATH: /home/ubuntu/.cache/ms-playwright
+      TAURI_TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      GDK_BACKEND: x11
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
+      NO_AT_BRIDGE: "1"
+    volumes:
+      - .:/workspace
+    shm_size: 2gb
+    security_opt:
+      - seccomp=unconfined
+    cap_add:
+      - SYS_ADMIN
+    init: true
+    command: bash

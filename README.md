@@ -57,3 +57,11 @@ mise install
 ```
 
 標準 Node.js は 26 系、pnpm は `10.24.0` です。
+
+CI に近い Ubuntu 環境で検証する場合は Docker Compose を使います。
+
+```bash
+docker compose run --rm dev bash scripts/verify-all.sh
+```
+
+詳細は [docs/docker-development.md](docs/docker-development.md) を参照してください。
