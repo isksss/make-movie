@@ -1,0 +1,12 @@
+name = "ts-basic"
+version = "0.1.0"
+component = "dist/ts-basic.wasm"
+
+[metadata]
+display_name = "TypeScript Basic"
+category = "utility"
+description = "TypeScript plugin template"
+
+[source]
+repository = "local"
+path = "./dist/ts-basic.wasm"

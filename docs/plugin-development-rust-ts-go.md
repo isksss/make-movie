@@ -43,6 +43,16 @@ my-plugin/
 
 `wit/plugin.wit` は make-movie 本体の `plugin-api/plugin.wit` と同じ内容にします。ABI を変更する場合は、本体側の `plugin-api/plugin.wit` を先に変更し、SDK と Runtime を同じ PR で更新します。
 
+## Templates
+
+SDK利用者向けの最小テンプレートは `plugin-api/templates/` に配置します。
+
+- `plugin-api/templates/rust-basic`
+- `plugin-api/templates/ts-basic`
+- `plugin-api/templates/go-basic`
+
+テンプレートは repository 内検証のため local SDK 参照を使います。外部 repository にコピーする場合は、各テンプレートの README に従って crates.io / npm / GitHub module 参照へ切り替えます。
+
 ## Manifest
 
 local 開発では `plugin.toml` を使います。
