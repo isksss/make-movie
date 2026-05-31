@@ -14,6 +14,7 @@ test.afterEach(() => {
 
 test("Tauri実アプリで表示と保存IPCを検証できる", async ({ tauriPage }) => {
   await tauriPage.waitForFunction("document.body.innerText.includes('make-movie')", 30_000);
+  await tauriPage.getByRole("combobox", { name: /^(言語|Language)$/ }).selectOption("ja");
   await expect(tauriPage.locator(".brand")).toContainText("make-movie");
   await expect(tauriPage.locator(".assets-pane")).toContainText("アセット");
 
