@@ -1,0 +1,52 @@
+name: Docs
+description: ドキュメント追加・修正チケット
+title: "[Docs]: "
+labels: []
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: 追加・修正するドキュメントの目的を書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: target
+    attributes:
+      label: Target Documents
+      description: 対象ドキュメントや配置先を書いてください。
+      value: |
+        -
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: ドキュメントに含める内容を箇条書きで書いてください。
+      value: |
+        -
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: 完了判定に使う条件を書いてください。
+      value: |
+        -
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification Steps
+      description: 表示確認やリンク確認などを書いてください。
+      value: |
+        - [ ] リンク切れがない
+        - [ ] 記載コマンドが現在の実装と一致している
+    validations:
+      required: true
