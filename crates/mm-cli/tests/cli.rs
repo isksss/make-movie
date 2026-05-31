@@ -129,6 +129,8 @@ fn help_outputs_japanese_with_lang() {
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
     assert!(stdout.contains("使用方法: mm"));
     assert!(stdout.contains("動画を書き出す"));
+    assert!(stdout.contains("配布用プロジェクトアーカイブを生成する"));
+    assert!(!stdout.contains("配布前のプロジェクト検証を行う"));
     assert!(stdout.contains("オプション:"));
 }
 
@@ -145,6 +147,8 @@ fn help_outputs_english_with_lang() {
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
     assert!(stdout.contains("Usage: mm"));
     assert!(stdout.contains("Render a movie"));
+    assert!(stdout.contains("Create a distributable project archive"));
+    assert!(!stdout.contains("Validate a project before packaging"));
     assert!(stdout.contains("Options:"));
 }
 
