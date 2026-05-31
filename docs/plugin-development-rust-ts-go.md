@@ -18,7 +18,24 @@ C#、Zig、C、C++ などの SDK は、当面 `plugin.wit` 追従と最小 lifec
 package mm:plugin;
 
 interface plugin {
-  metadata: func() -> string;
+  enum plugin-category {
+    ai,
+    subtitle,
+    tts,
+    template,
+    export,
+    utility,
+  }
+
+  record plugin-metadata {
+    name: string,
+    version: string,
+    category: plugin-category,
+    display-name: option<string>,
+    description: option<string>,
+  }
+
+  metadata: func() -> plugin-metadata;
   initialize: func();
   shutdown: func();
 }
@@ -149,12 +166,10 @@ struct MyPlugin {
 }
 
 impl MmPlugin for MyPlugin {
-    fn metadata(&self) -> String {
+    fn metadata(&self) -> PluginMetadata {
         PluginMetadata::new("my-plugin", "0.1.0", PluginCategory::Utility)
             .display_name("My Plugin")
             .description("Rust plugin")
-            .to_json()
-            .expect("metadata must be valid")
     }
 
     fn initialize(&mut self) {
@@ -281,20 +296,19 @@ pnpm を使う場合:
 corepack pnpm add mm-sdk-ts
 ```
 
-`definePlugin` で lifecycle を型付けし、`metadataToJson` で make-movie が読む metadata JSON を生成します。
+`definePlugin` で lifecycle を型付けし、metadata は `PluginMetadata` として返します。JSON が必要な検証やmanifest生成では `metadataToJson` を使います。
 
 ```ts
-import { definePlugin, metadataToJson } from "mm-sdk-ts";
+import { definePlugin } from "mm-sdk-ts";
 
 export default definePlugin({
-  metadata: () =>
-    metadataToJson({
-      name: "my-plugin",
-      version: "0.1.0",
-      category: "utility",
-      displayName: "My Plugin",
-      description: "TypeScript plugin",
-    }),
+  metadata: () => ({
+    name: "my-plugin",
+    version: "0.1.0",
+    category: "utility",
+    displayName: "My Plugin",
+    description: "TypeScript plugin",
+  }),
   initialize: () => {
     // Plugin 初期化
   },
@@ -431,14 +445,14 @@ type MyPlugin struct {
 
 var _ mmsdk.Plugin = (*MyPlugin)(nil)
 
-func (plugin *MyPlugin) Metadata() string {
-	return mmsdk.MustMetadataJSON(mmsdk.Metadata{
+func (plugin *MyPlugin) Metadata() mmsdk.Metadata {
+	return mmsdk.Metadata{
 		Name:        "my-plugin",
 		Version:     "0.1.0",
 		Category:    mmsdk.CategoryUtility,
 		DisplayName: "My Plugin",
 		Description: "Go plugin",
-	})
+	}
 }
 
 func (plugin *MyPlugin) Initialize() error {

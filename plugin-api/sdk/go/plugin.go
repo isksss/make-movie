@@ -65,23 +65,23 @@ func MustMetadataJSON(metadata Metadata) string {
 
 // Plugin mirrors the lifecycle defined in plugin-api/plugin.wit.
 type Plugin interface {
-	Metadata() string
+	Metadata() Metadata
 	Initialize() error
 	Shutdown() error
 }
 
 // NoopPlugin is useful for examples and tests.
 type NoopPlugin struct {
-	Value string
+	Value Metadata
 }
 
-func (plugin NoopPlugin) Metadata() string {
-	if plugin.Value == "" {
-		return MustMetadataJSON(Metadata{
+func (plugin NoopPlugin) Metadata() Metadata {
+	if strings.TrimSpace(plugin.Value.Name) == "" {
+		return Metadata{
 			Name:     "noop-plugin",
 			Version:  "0.1.0",
 			Category: CategoryUtility,
-		})
+		}
 	}
 	return plugin.Value
 }

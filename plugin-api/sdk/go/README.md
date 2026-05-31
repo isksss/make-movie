@@ -17,12 +17,12 @@ import mmsdk "github.com/isksss/make-movie/plugin-api/sdk/go"
 
 type MyPlugin struct{}
 
-func (plugin MyPlugin) Metadata() string {
-	return mmsdk.MustMetadataJSON(mmsdk.Metadata{
+func (plugin MyPlugin) Metadata() mmsdk.Metadata {
+	return mmsdk.Metadata{
 		Name:     "my-plugin",
 		Version:  "0.1.0",
 		Category: mmsdk.CategoryUtility,
-	})
+	}
 }
 
 func (plugin MyPlugin) Initialize() error {

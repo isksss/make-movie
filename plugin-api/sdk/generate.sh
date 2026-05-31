@@ -7,7 +7,8 @@ wit="$root/plugin.wit"
 
 required_wit_patterns=(
   "package mm:plugin;"
-  "metadata: func() -> string;"
+  "record plugin-metadata {"
+  "metadata: func() -> plugin-metadata;"
   "initialize: func();"
   "shutdown: func();"
 )
@@ -35,7 +36,7 @@ cat >"$sdk_root/README.md" <<'EOF'
 
 必須 export:
 
-- `metadata() -> string`
+- `metadata() -> plugin-metadata`
 - `initialize()`
 - `shutdown()`
 
@@ -131,10 +132,8 @@ use mm_sdk_rust::{MmPlugin, PluginCategory, PluginMetadata, export_plugin};
 struct MyPlugin;
 
 impl MmPlugin for MyPlugin {
-    fn metadata(&self) -> String {
+    fn metadata(&self) -> PluginMetadata {
         PluginMetadata::new("my-plugin", "0.1.0", PluginCategory::Utility)
-            .to_json()
-            .expect("metadata must be valid")
     }
 }
 
@@ -256,7 +255,7 @@ impl std::fmt::Display for MetadataError {
 impl std::error::Error for MetadataError {}
 
 pub trait MmPlugin {
-    fn metadata(&self) -> String;
+    fn metadata(&self) -> PluginMetadata;
 
     fn initialize(&mut self) {}
 
@@ -283,7 +282,9 @@ macro_rules! export_plugin {
         pub extern "C" fn metadata() -> *mut std::ffi::c_char {
             let mut plugin = PLUGIN.lock().expect("plugin lock poisoned");
             let instance = plugin.get_or_insert_with(<$plugin as Default>::default);
-            let metadata = <$plugin as $crate::MmPlugin>::metadata(instance);
+            let metadata = <$plugin as $crate::MmPlugin>::metadata(instance)
+                .to_json()
+                .expect("plugin metadata must be valid");
             std::ffi::CString::new(metadata)
                 .expect("plugin metadata must not contain NUL bytes")
                 .into_raw()
@@ -355,16 +356,14 @@ mod tests {
     struct TestPlugin;
 
     impl MmPlugin for TestPlugin {
-        fn metadata(&self) -> String {
+        fn metadata(&self) -> PluginMetadata {
             PluginMetadata::new("test", "0.1.0", PluginCategory::Utility)
-                .to_json()
-                .unwrap()
         }
     }
 
     #[test]
     fn plugin_returns_metadata() {
-        let metadata = TestPlugin.metadata();
+        let metadata = TestPlugin.metadata().to_json().unwrap();
         assert!(metadata.contains("\"name\":\"test\""));
         validate_metadata_json(&metadata).unwrap();
     }
@@ -399,12 +398,10 @@ use mm_sdk_rust::{MmPlugin, PluginCategory, PluginMetadata, export_plugin};
 struct MinimalPlugin;
 
 impl MmPlugin for MinimalPlugin {
-    fn metadata(&self) -> String {
+    fn metadata(&self) -> PluginMetadata {
         PluginMetadata::new("minimal-plugin", "0.1.0", PluginCategory::Utility)
             .display_name("Minimal Plugin")
             .description("Minimal make-movie plugin example")
-            .to_json()
-            .expect("metadata must be valid")
     }
 }
 
@@ -439,12 +436,12 @@ import mmsdk "github.com/isksss/make-movie/plugin-api/sdk/go"
 
 type MyPlugin struct{}
 
-func (plugin MyPlugin) Metadata() string {
-	return mmsdk.MustMetadataJSON(mmsdk.Metadata{
+func (plugin MyPlugin) Metadata() mmsdk.Metadata {
+	return mmsdk.Metadata{
 		Name:     "my-plugin",
 		Version:  "0.1.0",
 		Category: mmsdk.CategoryUtility,
-	})
+	}
 }
 
 func (plugin MyPlugin) Initialize() error {
@@ -536,23 +533,23 @@ func MustMetadataJSON(metadata Metadata) string {
 
 // Plugin mirrors the lifecycle defined in plugin-api/plugin.wit.
 type Plugin interface {
-	Metadata() string
+	Metadata() Metadata
 	Initialize() error
 	Shutdown() error
 }
 
 // NoopPlugin is useful for examples and tests.
 type NoopPlugin struct {
-	Value string
+	Value Metadata
 }
 
-func (plugin NoopPlugin) Metadata() string {
-	if plugin.Value == "" {
-		return MustMetadataJSON(Metadata{
+func (plugin NoopPlugin) Metadata() Metadata {
+	if strings.TrimSpace(plugin.Value.Name) == "" {
+		return Metadata{
 			Name:     "noop-plugin",
 			Version:  "0.1.0",
 			Category: CategoryUtility,
-		})
+		}
 	}
 	return plugin.Value
 }
@@ -601,11 +598,13 @@ func TestMetadataValidationRejectsInvalidCategory(t *testing.T) {
 }
 
 func TestNoopPluginMetadataIsValid(t *testing.T) {
-	if err := (Metadata{Name: "noop-plugin", Version: "0.1.0", Category: CategoryUtility}).Validate(); err != nil {
+	metadata := NoopPlugin{}.Metadata()
+
+	if err := metadata.Validate(); err != nil {
 		t.Fatalf("metadata should be valid: %v", err)
 	}
 
-	if !strings.Contains(NoopPlugin{}.Metadata(), `"category":"utility"`) {
+	if metadata.Category != CategoryUtility {
 		t.Fatalf("noop metadata should contain category")
 	}
 }
@@ -618,12 +617,12 @@ import mmsdk "github.com/isksss/make-movie/plugin-api/sdk/go"
 
 type MinimalPlugin struct{}
 
-func (plugin MinimalPlugin) Metadata() string {
-	return mmsdk.MustMetadataJSON(mmsdk.Metadata{
+func (plugin MinimalPlugin) Metadata() mmsdk.Metadata {
+	return mmsdk.Metadata{
 		Name:     "minimal-plugin",
 		Version:  "0.1.0",
 		Category: mmsdk.CategoryUtility,
-	})
+	}
 }
 
 func (plugin MinimalPlugin) Initialize() error {
@@ -697,15 +696,14 @@ pnpm add mm-sdk-ts
 ## Example
 
 ```ts
-import { definePlugin, metadataToJson } from "mm-sdk-ts";
+import { definePlugin } from "mm-sdk-ts";
 
 export default definePlugin({
-  metadata: () =>
-    metadataToJson({
-      name: "my-plugin",
-      version: "0.1.0",
-      category: "utility",
-    }),
+  metadata: () => ({
+    name: "my-plugin",
+    version: "0.1.0",
+    category: "utility",
+  }),
   initialize: () => undefined,
   shutdown: () => undefined,
 });
@@ -766,7 +764,7 @@ export interface PluginMetadata {
 }
 
 export interface MmPlugin {
-  metadata(): string;
+  metadata(): PluginMetadata;
   initialize(): void | Promise<void>;
   shutdown(): void | Promise<void>;
 }
@@ -808,12 +806,11 @@ export function validateMetadata(metadata: PluginMetadata): void {
 }
 
 export const noopPlugin: MmPlugin = definePlugin({
-  metadata: () =>
-    metadataToJson({
-      name: "noop-plugin",
-      version: "0.1.0",
-      category: "utility",
-    }),
+  metadata: () => ({
+    name: "noop-plugin",
+    version: "0.1.0",
+    category: "utility",
+  }),
   initialize: () => undefined,
   shutdown: () => undefined,
 });
@@ -838,29 +835,28 @@ const metadata = {
 const metadataJson: string = metadataToJson(metadata);
 
 const plugin: MmPlugin = definePlugin({
-  metadata: () => metadataJson,
+  metadata: () => metadata,
   initialize: async () => undefined,
   shutdown: () => undefined,
 });
 
-const noopMetadata: string = noopPlugin.metadata();
+const noopMetadata: PluginMetadata = noopPlugin.metadata();
 
 void plugin;
 void noopMetadata;
 EOF
 
 cat >"$sdk_root/ts/examples/minimal-plugin.ts" <<'EOF'
-import { definePlugin, metadataToJson } from "../src/index.js";
+import { definePlugin } from "../src/index.js";
 
 export default definePlugin({
-  metadata: () =>
-    metadataToJson({
-      name: "minimal-plugin",
-      version: "0.1.0",
-      category: "utility",
-      displayName: "Minimal Plugin",
-      description: "Minimal make-movie plugin example",
-    }),
+  metadata: () => ({
+    name: "minimal-plugin",
+    version: "0.1.0",
+    category: "utility",
+    displayName: "Minimal Plugin",
+    description: "Minimal make-movie plugin example",
+  }),
   initialize: () => undefined,
   shutdown: () => undefined,
 });
@@ -887,7 +883,7 @@ namespace Mm.Sdk;
 /// </summary>
 public interface IMmPlugin
 {
-    string Metadata();
+    PluginMetadata Metadata();
 
     void Initialize()
     {
@@ -898,9 +894,26 @@ public interface IMmPlugin
     }
 }
 
+public enum PluginCategory
+{
+    Ai,
+    Subtitle,
+    Tts,
+    Template,
+    Export,
+    Utility,
+}
+
+public sealed record PluginMetadata(
+    string Name,
+    string Version,
+    PluginCategory Category,
+    string? DisplayName = null,
+    string? Description = null);
+
 public sealed class NoopPlugin : IMmPlugin
 {
-    public string Metadata() => "{}";
+    public PluginMetadata Metadata() => new("noop-plugin", "0.1.0", PluginCategory.Utility);
 }
 EOF
 
