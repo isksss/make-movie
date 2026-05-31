@@ -44,6 +44,7 @@ corepack pnpm --dir apps/mm-gui build
 ## Tauri
 
 ```bash
+corepack pnpm --dir apps/mm-gui exec tauri --version
 TAURI_TARGET_TRIPLE=x86_64-unknown-linux-gnu bash scripts/prepare-tauri-sidecars.sh
 cargo test --manifest-path apps/mm-gui/src-tauri/Cargo.toml
 cargo clippy --manifest-path apps/mm-gui/src-tauri/Cargo.toml --all-targets -- -D warnings
