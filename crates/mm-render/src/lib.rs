@@ -8,9 +8,10 @@ use mm_core::{
     VideoLayer, VoiceLayer, WipeShape, save_wav_audio, synthesize_with_default_provider,
 };
 use skia_safe::{
-    AlphaType, BlurStyle, Color, Color4f, ColorType, Data, Font as SkiaFont, FontMgr, FontStyle,
-    ImageInfo, MaskFilter, Paint, PathBuilder, RRect, Rect, TileMode, Typeface, color_filters,
-    gradient, image::CachingHint, image_filters, images, paint, surfaces, utils::text_utils,
+    AlphaType, BlendMode, BlurStyle, Color, Color4f, ColorType, Data, FilterMode, Font as SkiaFont,
+    FontMgr, FontStyle, ImageInfo, MaskFilter, MipmapMode, Paint, PathBuilder, RRect, Rect,
+    SamplingOptions, TileMode, Typeface, color_filters, gradient, image::CachingHint,
+    image_filters, images, paint, surfaces, utils::text_utils,
 };
 use std::env;
 use std::fs;
@@ -1143,18 +1144,102 @@ impl SkiaFrameRenderer {
         opacity: f32,
         effects: &[Effect],
     ) -> Result<()> {
-        let info = ImageInfo::new(
-            (image.width() as i32, image.height() as i32),
-            ColorType::RGBA8888,
-            AlphaType::Unpremul,
-            None,
-        );
-        let data = Data::new_copy(image.as_raw());
-        let image = images::raster_from_data(&info, data, (image.width() * 4) as usize)
-            .context("Skia image を RgbaImage から作成できません")?;
+        let image = skia_image_from_rgba(image)?;
+        let width = image.width();
+        let height = image.height();
+        let image = self.apply_skia_native_image_effects(image, width, height, effects)?;
         let paint = skia_image_paint(opacity, effects);
         canvas.draw_image(image, (x, y), Some(&paint));
         Ok(())
+    }
+
+    fn apply_skia_native_image_effects(
+        &self,
+        mut image: skia_safe::Image,
+        width: i32,
+        height: i32,
+        effects: &[Effect],
+    ) -> Result<skia_safe::Image> {
+        for effect in effects {
+            image = match *effect {
+                Effect::Pixelate { size } if size > 1 => {
+                    self.skia_pixelate_image(&image, width, height, size)?
+                }
+                Effect::MotionBlur { amount } if amount > 0.0 => {
+                    self.skia_motion_blur_image(&image, width, height, amount)?
+                }
+                Effect::FadeIn { .. }
+                | Effect::FadeOut { .. }
+                | Effect::Blur { .. }
+                | Effect::Brightness { .. }
+                | Effect::Contrast { .. }
+                | Effect::Saturation { .. }
+                | Effect::Zoom { .. }
+                | Effect::Slide { .. }
+                | Effect::Pixelate { .. }
+                | Effect::MotionBlur { .. } => image,
+            };
+        }
+        Ok(image)
+    }
+
+    fn skia_pixelate_image(
+        &self,
+        image: &skia_safe::Image,
+        width: i32,
+        height: i32,
+        size: u32,
+    ) -> Result<skia_safe::Image> {
+        let small_width = ((width as u32) / size).max(1);
+        let small_height = ((height as u32) / size).max(1);
+        let src = Rect::from_wh(width as f32, height as f32);
+        let small_dst = Rect::from_wh(small_width as f32, small_height as f32);
+        let full_dst = Rect::from_wh(width as f32, height as f32);
+        let sampling = SamplingOptions::new(FilterMode::Nearest, MipmapMode::None);
+        let paint = Paint::default();
+
+        let mut small_surface = self.surface(small_width, small_height, Rgba([0, 0, 0, 0]))?;
+        small_surface
+            .canvas()
+            .draw_image_rect_with_sampling_options(
+                image,
+                Some((&src, skia_safe::canvas::SrcRectConstraint::Fast)),
+                small_dst,
+                sampling,
+                &paint,
+            );
+        let small_image = small_surface.image_snapshot();
+
+        let mut full_surface = self.surface(width as u32, height as u32, Rgba([0, 0, 0, 0]))?;
+        full_surface.canvas().draw_image_rect_with_sampling_options(
+            &small_image,
+            None,
+            full_dst,
+            sampling,
+            &paint,
+        );
+        Ok(full_surface.image_snapshot())
+    }
+
+    fn skia_motion_blur_image(
+        &self,
+        image: &skia_safe::Image,
+        width: i32,
+        height: i32,
+        amount: f32,
+    ) -> Result<skia_safe::Image> {
+        let radius = amount.round().max(1.0) as i32;
+        let sample_count = (radius * 2 + 1) as f32;
+        let mut surface = self.surface(width as u32, height as u32, Rgba([0, 0, 0, 0]))?;
+        let mut paint = Paint::default();
+        paint.set_alpha_f(1.0 / sample_count);
+        paint.set_blend_mode(BlendMode::Plus);
+        for offset in -radius..=radius {
+            surface
+                .canvas()
+                .draw_image(image, (offset, 0), Some(&paint));
+        }
+        Ok(surface.image_snapshot())
     }
 
     fn clip_mask(
@@ -1514,6 +1599,18 @@ fn skia_text_fill_paint(text: &TextLayer, transform: Transform, fallback: Rgba<u
 
 fn skia_color(color: Rgba<u8>) -> Color {
     Color::from_argb(color[3], color[0], color[1], color[2])
+}
+
+fn skia_image_from_rgba(image: &RgbaImage) -> Result<skia_safe::Image> {
+    let info = ImageInfo::new(
+        (image.width() as i32, image.height() as i32),
+        ColorType::RGBA8888,
+        AlphaType::Unpremul,
+        None,
+    );
+    let data = Data::new_copy(image.as_raw());
+    images::raster_from_data(&info, data, (image.width() * 4) as usize)
+        .context("Skia image を RgbaImage から作成できません")
 }
 
 fn skia_image_paint(opacity: f32, effects: &[Effect]) -> Paint {
@@ -2005,8 +2102,8 @@ fn apply_image_effects_except_skia_native(mut image: RgbaImage, effects: &[Effec
             Effect::Brightness { amount } if amount != 0.0 => image,
             Effect::Contrast { amount } if amount != 0.0 => image,
             Effect::Saturation { amount } if amount != 1.0 => image,
-            Effect::Pixelate { size } if size > 1 => pixelate(&image, size),
-            Effect::MotionBlur { amount } if amount > 0.0 => motion_blur(&image, amount),
+            Effect::Pixelate { size } if size > 1 => image,
+            Effect::MotionBlur { amount } if amount > 0.0 => image,
             Effect::FadeIn { .. }
             | Effect::FadeOut { .. }
             | Effect::Blur { .. }
@@ -3444,6 +3541,78 @@ mod tests {
             frame.get_pixel(6, 12)[0] < 80,
             "contrast による暗い pixel がありません: {:?}",
             frame.get_pixel(6, 12)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn skia_native_pixelate_groups_pixels_with_nearest_sampling() -> Result<()> {
+        let renderer = SkiaFrameRenderer::new()?;
+        let mut source = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 0, 255]));
+        for y in 0..4 {
+            for x in 0..4 {
+                if (x + y) % 2 == 0 {
+                    source.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+                }
+            }
+        }
+
+        let image = skia_image_from_rgba(&source)?;
+        let image = renderer.apply_skia_native_image_effects(
+            image,
+            4,
+            4,
+            &[Effect::Pixelate { size: 2 }],
+        )?;
+        let mut surface = renderer.surface(4, 4, Rgba([0, 0, 0, 0]))?;
+        surface
+            .canvas()
+            .draw_image(image, (0, 0), Some(&Paint::default()));
+        let frame = renderer.read_surface(&mut surface, 4, 4)?;
+
+        assert_eq!(frame.get_pixel(0, 0), frame.get_pixel(1, 0));
+        assert_eq!(frame.get_pixel(0, 0), frame.get_pixel(0, 1));
+        assert_ne!(
+            frame.get_pixel(0, 0),
+            source.get_pixel(1, 0),
+            "pixelate が隣接 pixel をブロック化していません"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn skia_native_motion_blur_spreads_pixels_horizontally() -> Result<()> {
+        let renderer = SkiaFrameRenderer::new()?;
+        let mut source = RgbaImage::from_pixel(5, 1, Rgba([0, 0, 0, 255]));
+        source.put_pixel(2, 0, Rgba([255, 255, 255, 255]));
+
+        let image = skia_image_from_rgba(&source)?;
+        let image = renderer.apply_skia_native_image_effects(
+            image,
+            5,
+            1,
+            &[Effect::MotionBlur { amount: 1.0 }],
+        )?;
+        let mut surface = renderer.surface(5, 1, Rgba([0, 0, 0, 0]))?;
+        surface
+            .canvas()
+            .draw_image(image, (0, 0), Some(&Paint::default()));
+        let frame = renderer.read_surface(&mut surface, 5, 1)?;
+
+        assert!(
+            frame.get_pixel(1, 0)[0] > 0 && frame.get_pixel(1, 0)[0] < 200,
+            "motion blur が左隣へ中間色を広げていません: {:?}",
+            frame.get_pixel(1, 0)
+        );
+        assert!(
+            frame.get_pixel(3, 0)[0] > 0 && frame.get_pixel(3, 0)[0] < 200,
+            "motion blur が右隣へ中間色を広げていません: {:?}",
+            frame.get_pixel(3, 0)
+        );
+        assert!(
+            frame.get_pixel(2, 0)[0] < 255,
+            "motion blur 後の中心 pixel が平均化されていません: {:?}",
+            frame.get_pixel(2, 0)
         );
         Ok(())
     }
