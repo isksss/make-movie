@@ -4092,6 +4092,61 @@ mod tests {
     }
 
     #[test]
+    fn gpu_hybrid_image_layers_match_cpu_renderer_for_supported_cases() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255])).save(media.join("red.png"))?;
+        RgbaImage::from_pixel(8, 8, Rgba([0, 255, 0, 255])).save(media.join("green.png"))?;
+        RgbaImage::from_pixel(16, 8, Rgba([0, 0, 255, 255])).save(media.join("blue.png"))?;
+
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([2, 4, 6, 255]);
+
+        let mut basic = image_compare_project("red", "media/image/red.png");
+        let mut basic_layer = image_test_layer("basic", "red", 1, 2.0, 2.0);
+        basic_layer.transform.width = 8.0;
+        basic_layer.transform.height = 8.0;
+        basic.tracks[0].layers = vec![basic_layer];
+        assert_cpu_gpu_pixel_close(&basic, &options, 0.5, 4, 4, 1);
+
+        let mut masked = image_compare_project("green", "media/image/green.png");
+        let mut masked_layer = image_test_layer("masked", "green", 1, 2.0, 2.0);
+        masked_layer.transform.width = 8.0;
+        masked_layer.transform.height = 8.0;
+        if let LayerContent::Image(content) = &mut masked_layer.content {
+            content.mask = Some(Mask::Circle);
+        }
+        masked.tracks[0].layers = vec![masked_layer];
+        assert_cpu_gpu_pixel_close(&masked, &options, 0.5, 2, 2, 1);
+        assert_cpu_gpu_pixel_close(&masked, &options, 0.5, 6, 6, 1);
+
+        let mut fitted = image_compare_project("blue", "media/image/blue.png");
+        let mut fitted_layer = image_test_layer("fitted", "blue", 1, 2.0, 2.0);
+        fitted_layer.transform.width = 8.0;
+        fitted_layer.transform.height = 8.0;
+        if let LayerContent::Image(content) = &mut fitted_layer.content {
+            content.fit = Some(FitMode::Contain);
+        }
+        fitted.tracks[0].layers = vec![fitted_layer];
+        assert_cpu_gpu_pixel_close(&fitted, &options, 0.5, 2, 2, 1);
+        assert_cpu_gpu_pixel_close(&fitted, &options, 0.5, 5, 5, 1);
+
+        let mut transitioned = image_compare_project("red", "media/image/red.png");
+        let mut transitioned_layer = image_test_layer("transitioned", "red", 1, 2.0, 2.0);
+        transitioned_layer.transform.width = 8.0;
+        transitioned_layer.transform.height = 8.0;
+        transitioned_layer.transition = Some(Transition::CrossFade { duration: 1.0 });
+        transitioned.tracks[0].layers = vec![transitioned_layer];
+        assert_cpu_gpu_pixel_close(&transitioned, &options, 0.5, 4, 4, 1);
+
+        Ok(())
+    }
+
+    #[test]
     fn render_frame_skia_draws_on_skia_background() -> Result<()> {
         let project = text_project();
         let mut options = RenderOptions::new(".", "output.mp4");
@@ -4743,6 +4798,44 @@ mod tests {
             animations: vec![],
             transition: None,
         }
+    }
+
+    fn image_compare_project(asset_id: &str, asset_path: &str) -> Project {
+        let mut project = text_project();
+        project.settings.width = 12;
+        project.settings.height = 12;
+        project.assets = vec![Asset {
+            id: asset_id.to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from(asset_path),
+        }];
+        project
+    }
+
+    fn assert_cpu_gpu_pixel_close(
+        project: &Project,
+        options: &RenderOptions,
+        time: f64,
+        x: u32,
+        y: u32,
+        tolerance: u8,
+    ) {
+        let cpu = render_frame(project, options, time).expect("CPU renderer が失敗しました");
+        let gpu =
+            render_frame_gpu_hybrid(project, options, time).expect("GPU renderer が失敗しました");
+        let cpu_pixel = *cpu.get_pixel(x, y);
+        let gpu_pixel = *gpu.get_pixel(x, y);
+        assert!(
+            rgba_close(cpu_pixel, gpu_pixel, tolerance),
+            "CPU/GPU pixel が一致しません: ({x}, {y}) cpu={cpu_pixel:?} gpu={gpu_pixel:?}"
+        );
+    }
+
+    fn rgba_close(left: Rgba<u8>, right: Rgba<u8>, tolerance: u8) -> bool {
+        left.0
+            .iter()
+            .zip(right.0.iter())
+            .all(|(left, right)| left.abs_diff(*right) <= tolerance)
     }
 
     #[test]

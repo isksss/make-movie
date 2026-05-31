@@ -10,7 +10,7 @@
 ## Phase 2: Renderer
 
 - Text / Subtitle / Animation / Mask / Wipe / Effects / Transition を拡充する。
-- CPU renderer と GPU renderer の差分をテストで確認できるようにする。
+- CPU renderer と GPU renderer の差分を、Image layer の代表ケースからテストで確認できるようにする。
 - FFmpeg による decode / encode / audio processing を拡張する。
 
 ## Phase 3: GUI
