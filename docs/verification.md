@@ -55,6 +55,8 @@ corepack pnpm --dir apps/mm-gui build
 `e2e` はブラウザ上の Playwright E2E、`e2e:tauri` は
 `e2e-testing` feature で Tauri 実アプリを起動して Playwright から検証します。
 `e2e:tauri` は WebKitGTK と GUI session が利用できる Linux 環境で実行します。
+CI では Ubuntu 上で `xvfb-run -a pnpm --dir apps/mm-gui e2e:tauri` を実行し、
+headless 環境でも Tauri 実アプリの Playwright E2E を検証します。
 
 ## Tauri
 
