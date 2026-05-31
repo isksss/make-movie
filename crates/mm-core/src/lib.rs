@@ -1,6 +1,6 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::env;
 use std::fs;
 use std::io::{Cursor, Read};
@@ -817,14 +817,14 @@ fn validate_time_range(id: &str, start: f64, duration: f64) -> Result<()> {
 }
 
 fn validate_layer_group(project: &Project, layer: &Layer) -> Result<()> {
-    if let Some(group_id) = &layer.group_id {
-        if !project.groups.iter().any(|group| group.id == *group_id) {
-            bail!(
-                "layer '{}' の group_id '{}' が groups に存在しません",
-                layer.id,
-                group_id
-            );
-        }
+    if let Some(group_id) = &layer.group_id
+        && !project.groups.iter().any(|group| group.id == *group_id)
+    {
+        bail!(
+            "layer '{}' の group_id '{}' が groups に存在しません",
+            layer.id,
+            group_id
+        );
     }
     Ok(())
 }
@@ -837,14 +837,14 @@ fn validate_layer_content(project: &Project, layer: &Layer) -> Result<()> {
         LayerContent::Subtitle(content) => Some(content.asset_id.as_str()),
         LayerContent::Text(_) | LayerContent::Voice(_) => None,
     };
-    if let Some(asset_id) = asset_id {
-        if !project.assets.iter().any(|asset| asset.id == asset_id) {
-            bail!(
-                "layer '{}' が未知の asset '{}' を参照しています",
-                layer.id,
-                asset_id
-            );
-        }
+    if let Some(asset_id) = asset_id
+        && !project.assets.iter().any(|asset| asset.id == asset_id)
+    {
+        bail!(
+            "layer '{}' が未知の asset '{}' を参照しています",
+            layer.id,
+            asset_id
+        );
     }
     Ok(())
 }
