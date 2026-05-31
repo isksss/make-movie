@@ -41,3 +41,13 @@ Verification Steps
 
 References
 ```
+
+## Issue 再確認
+
+外部からIssueが追加される運用に対応するため、PRを3本作成するごとにopen Issueを再確認します。
+
+```bash
+gh issue list --state open --limit 100 --json number,title,url,createdAt,updatedAt
+```
+
+新しいIssueが追加されていた場合は、現在の作業キューへ反映し、優先順位を見直します。

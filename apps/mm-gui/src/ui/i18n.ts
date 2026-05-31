@@ -38,6 +38,12 @@ export const messages = {
     saved: "プロジェクトを保存しました",
     imported: "アセットを取り込みました",
     built: "動画を書き出しました",
+    externalAnalysisApplied: "外部解析を適用しました",
+    previewRendered: "Rustプレビューを生成しました",
+    gpuAvailable: "GPU利用可",
+    gpuUnavailable: "GPU未検出",
+    renderBackend: "レンダリング",
+    renderPreviewFrame: "Rustプレビュー生成",
     language: "言語",
     japanese: "日本語",
     english: "English",
@@ -128,6 +134,8 @@ export const messages = {
     effectAmount: "エフェクト量",
     effectX: "エフェクト X",
     effectY: "エフェクト Y",
+    externalAnalysis: "外部解析JSON",
+    applyExternalAnalysis: "外部解析を適用",
     keyframeProperty: "キーフレーム対象",
     easing: "イージング",
     keyframe1Time: "キーフレーム1 時刻",
@@ -144,6 +152,12 @@ export const messages = {
     saved: "Project saved",
     imported: "Asset imported",
     built: "Movie built",
+    externalAnalysisApplied: "External analysis applied",
+    previewRendered: "Rust preview rendered",
+    gpuAvailable: "GPU available",
+    gpuUnavailable: "GPU unavailable",
+    renderBackend: "Rendering",
+    renderPreviewFrame: "Render Rust preview",
     language: "Language",
     japanese: "日本語",
     english: "English",
@@ -234,6 +248,8 @@ export const messages = {
     effectAmount: "Effect Amount",
     effectX: "Effect X",
     effectY: "Effect Y",
+    externalAnalysis: "External Analysis JSON",
+    applyExternalAnalysis: "Apply External Analysis",
     keyframeProperty: "Keyframe Property",
     easing: "Easing",
     keyframe1Time: "Keyframe 1 Time",
@@ -259,6 +275,7 @@ export const optionLabels: Record<
     easing: Record<EasingKind, string>;
     ttsProvider: Record<TtsProviderKind, string>;
     gradientDirection: Record<TextGradientDirection, string>;
+    renderBackend: Record<"auto" | "cpu" | "skia" | "gpu", string>;
   }
 > = {
   ja: {
@@ -339,6 +356,12 @@ export const optionLabels: Record<
       vertical: "縦",
       horizontal: "横",
     },
+    renderBackend: {
+      auto: "Auto",
+      cpu: "CPU",
+      skia: "Skia",
+      gpu: "GPU",
+    },
   },
   en: {
     textAlign: {
@@ -417,6 +440,12 @@ export const optionLabels: Record<
     gradientDirection: {
       vertical: "Vertical",
       horizontal: "Horizontal",
+    },
+    renderBackend: {
+      auto: "Auto",
+      cpu: "CPU",
+      skia: "Skia",
+      gpu: "GPU",
     },
   },
 };

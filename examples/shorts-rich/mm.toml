@@ -1,0 +1,219 @@
+[settings]
+title = "Shorts Rich Example"
+width = 1080
+height = 1920
+fps = 30
+sample_rate = 48000
+duration = 8.0
+output = "output/shorts-rich.mp4"
+asset_mode = "copy"
+
+[[plugin]]
+repository = "github"
+owner = "isksss"
+repo = "shorts-template-pack"
+version = "1.0.0"
+
+[[groups]]
+id = "opening"
+name = "Opening"
+
+[[groups]]
+id = "cta"
+name = "Call To Action"
+
+[[scenes]]
+id = "hook"
+name = "Hook"
+start = 0.0
+duration = 3.0
+
+[[scenes]]
+id = "explain"
+name = "Explain"
+start = 3.0
+duration = 3.0
+
+[[scenes]]
+id = "cta"
+name = "CTA"
+start = 6.0
+duration = 2.0
+
+[[tracks]]
+id = "v1"
+name = "V1 Main Video"
+kind = "video"
+
+[[tracks.layers]]
+id = "background"
+group_id = "opening"
+start = 0.0
+duration = 8.0
+z_index = 0
+
+[tracks.layers.content]
+type = "text"
+text = "make-movie\nShorts"
+font_family = "HackGen"
+font_size = 96.0
+color = "#f8fafc"
+letter_spacing = 1.2
+line_spacing = 1.05
+align = "center"
+
+[tracks.layers.content.stroke]
+color = "#0f172a"
+width = 4.0
+
+[tracks.layers.content.shadow]
+color = "#111827"
+offset_x = 0.0
+offset_y = 8.0
+blur = 12.0
+
+[tracks.layers.content.gradient]
+start_color = "#f8fafc"
+end_color = "#67e8f9"
+direction = "vertical"
+
+[tracks.layers.transform]
+x = 540.0
+y = 360.0
+width = 920.0
+height = 260.0
+scale = 1.0
+rotation = 0.0
+opacity = 1.0
+
+[[tracks.layers.effects]]
+type = "fade_in"
+duration = 0.4
+
+[[tracks.layers.animations]]
+property = "scale"
+easing = "ease_out_back"
+
+[[tracks.layers.animations.keyframes]]
+time = 0.0
+value = 0.88
+
+[[tracks.layers.animations.keyframes]]
+time = 0.7
+value = 1.0
+
+[[tracks.layers]]
+id = "point-1"
+group_id = "opening"
+start = 2.0
+duration = 3.5
+z_index = 2
+
+[tracks.layers.content]
+type = "text"
+text = "宣言的に動画を生成"
+font_family = "HackGen"
+font_size = 64.0
+color = "#fde68a"
+align = "center"
+
+[tracks.layers.transform]
+x = 540.0
+y = 880.0
+width = 920.0
+height = 96.0
+scale = 1.0
+rotation = 0.0
+opacity = 1.0
+
+[[tracks.layers.effects]]
+type = "slide"
+x = 0.0
+y = 80.0
+
+[tracks.layers.transition]
+type = "wipe"
+duration = 0.5
+
+[tracks.layers.transition.shape]
+type = "rounded_rect"
+radius = 28.0
+
+[tracks.layers.transition.shape.border]
+color = "#ffffff"
+width = 2.0
+
+[tracks.layers.transition.shape.shadow]
+color = "#020617"
+offset_x = 0.0
+offset_y = 6.0
+blur = 12.0
+
+[[tracks.layers]]
+id = "cta-text"
+group_id = "cta"
+start = 6.0
+duration = 2.0
+z_index = 3
+
+[tracks.layers.content]
+type = "text"
+text = "mm.toml から mp4 へ"
+font_family = "HackGen"
+font_size = 56.0
+color = "#86efac"
+align = "center"
+
+[tracks.layers.transform]
+x = 540.0
+y = 1320.0
+width = 900.0
+height = 100.0
+scale = 1.0
+rotation = -2.0
+opacity = 1.0
+
+[[tracks.layers.effects]]
+type = "zoom"
+amount = 1.08
+
+[[tracks.layers.animations]]
+property = "opacity"
+easing = "ease_in_out"
+
+[[tracks.layers.animations.keyframes]]
+time = 6.0
+value = 0.0
+
+[[tracks.layers.animations.keyframes]]
+time = 6.4
+value = 1.0
+
+[[tracks]]
+id = "a1"
+name = "A1 Voice"
+kind = "audio"
+
+[[tracks.layers]]
+id = "voice-main"
+start = 0.0
+duration = 8.0
+z_index = 0
+
+[tracks.layers.content]
+type = "voice"
+provider = "voicevox"
+speaker = "ずんだもん"
+text = "これは、make-movie のショート動画サンプルです。宣言的な設定だけで、テキスト、効果、トランジション、キーフレームを組み合わせます。"
+speed = 1.08
+pitch = 0.0
+emotion = "neutral"
+
+[tracks.layers.transform]
+x = 0.0
+y = 0.0
+width = 0.0
+height = 0.0
+scale = 1.0
+rotation = 0.0
+opacity = 1.0

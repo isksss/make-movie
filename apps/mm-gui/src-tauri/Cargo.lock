@@ -2969,6 +2969,7 @@ dependencies = [
  "mm-plugin-runtime",
  "mm-render",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-playwright",
