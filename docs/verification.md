@@ -24,6 +24,7 @@ cargo test --workspace
 ```bash
 cargo run -p mm-cli -- validate --project examples/basic/mm.toml
 cargo run -p mm-cli -- doctor
+cargo run -p mm-cli -- package --project-root examples/basic --output examples/basic/output/basic.tar.gz
 ```
 
 FFmpeg が利用可能な環境では build も確認します。
