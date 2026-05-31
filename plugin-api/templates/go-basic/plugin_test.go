@@ -3,13 +3,16 @@ package gobasic
 import (
 	"strings"
 	"testing"
+
+	mmsdk "github.com/isksss/make-movie/plugin-api/sdk/go"
 )
 
 func TestMetadata(t *testing.T) {
 	plugin := &Plugin{}
+	metadata := mmsdk.MustMetadataJSON(plugin.Metadata())
 
-	if !strings.Contains(plugin.Metadata(), `"name":"go-basic"`) {
-		t.Fatalf("metadata should contain plugin name: %s", plugin.Metadata())
+	if !strings.Contains(metadata, `"name":"go-basic"`) {
+		t.Fatalf("metadata should contain plugin name: %s", metadata)
 	}
 }
 

@@ -8,7 +8,7 @@
 
 必須 export:
 
-- `metadata() -> string`
+- `metadata() -> plugin-metadata`
 - `initialize()`
 - `shutdown()`
 

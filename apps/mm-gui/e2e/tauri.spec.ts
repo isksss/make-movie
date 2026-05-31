@@ -8,6 +8,7 @@ type TauriCall = {
 declare global {
   interface Window {
     __TAURI_TEST_CALLS__: TauriCall[];
+    __TAURI_DIALOG_CALLS__: TauriCall[];
     __TAURI_INTERNALS__: {
       invoke: (cmd: string, args: Record<string, unknown>) => Promise<unknown>;
       transformCallback: () => number;
@@ -20,6 +21,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("mm.locale", "ja");
     const calls: TauriCall[] = [];
+    const dialogCalls: TauriCall[] = [];
     const importedProjectToml = (assetId: string, assetKind: string, assetPath: string) =>
       [
         "[settings]",
@@ -94,6 +96,7 @@ test.beforeEach(async ({ page }) => {
         "",
       ].join("\n");
     window.__TAURI_TEST_CALLS__ = calls;
+    window.__TAURI_DIALOG_CALLS__ = dialogCalls;
     window.__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args: Record<string, unknown>) => {
         if (cmd === "list_system_fonts") {
@@ -101,6 +104,16 @@ test.beforeEach(async ({ page }) => {
         }
         if (cmd === "probe_gpu_backend") {
           return { available: false, adapterName: null };
+        }
+        if (cmd === "plugin:dialog|save") {
+          dialogCalls.push({ cmd, args });
+          return "/tmp/e2e/mm.toml";
+        }
+        if (cmd === "plugin:dialog|open") {
+          dialogCalls.push({ cmd, args });
+          const options = args.options as { filters?: Array<{ extensions?: string[] }> };
+          const extensions = options.filters?.flatMap((filter) => filter.extensions ?? []) ?? [];
+          return extensions.includes("toml") ? "/tmp/e2e/mm.toml" : "/tmp/e2e/import.png";
         }
         calls.push({ cmd, args });
         if (cmd === "load_project") {
@@ -184,7 +197,7 @@ test("Textレイヤーでシステムフォントを選択して保存できる"
     {
       cmd: "save_project",
       args: expect.objectContaining({
-        path: "mm.toml",
+        path: "/tmp/e2e/mm.toml",
         toml: expect.stringContaining('font_family = "HackGen"'),
       }),
     },
@@ -215,26 +228,33 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
   expect(calls).toEqual([
-    { cmd: "load_project", args: { path: "mm.toml" } },
+    { cmd: "load_project", args: { path: "/tmp/e2e/mm.toml" } },
     {
       cmd: "save_project",
       args: expect.objectContaining({
-        path: "mm.toml",
+        path: "/tmp/e2e/mm.toml",
         toml: expect.stringContaining("[settings]"),
       }),
     },
     {
       cmd: "import_asset_into_project",
-      args: { projectPath: "mm.toml", sourcePath: "media/image/import.png", kind: "image" },
+      args: { projectPath: "/tmp/e2e/mm.toml", sourcePath: "/tmp/e2e/import.png", kind: "image" },
     },
     {
       cmd: "save_project",
       args: expect.objectContaining({
-        path: "mm.toml",
+        path: "/tmp/e2e/mm.toml",
         toml: expect.stringContaining('id = "import-layer"'),
       }),
     },
-    { cmd: "build_project_with_backend", args: { path: "mm.toml", backend: "auto" } },
+    {
+      cmd: "save_project",
+      args: expect.objectContaining({
+        path: "/tmp/e2e/mm.toml",
+        toml: expect.stringContaining('id = "import-layer"'),
+      }),
+    },
+    { cmd: "build_project_with_backend", args: { path: "/tmp/e2e/mm.toml", backend: "auto" } },
   ]);
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[tracks.layers]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('label = "Hero Layer"'));
@@ -270,10 +290,10 @@ test("Assetsペインへのdropでassetとlayerを取り込める", async ({ pag
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
   expect(calls).toEqual([
-    { cmd: "load_project", args: { path: "mm.toml" } },
+    { cmd: "load_project", args: { path: "/tmp/e2e/mm.toml" } },
     {
       cmd: "import_asset_into_project",
-      args: { projectPath: "mm.toml", sourcePath: "/tmp/drop.wav", kind: "audio" },
+      args: { projectPath: "/tmp/e2e/mm.toml", sourcePath: "/tmp/drop.wav", kind: "audio" },
     },
   ]);
 });
@@ -300,7 +320,7 @@ test("TTS編集は保存TOMLのVoiceレイヤーに反映される", async ({ pa
     {
       cmd: "save_project",
       args: expect.objectContaining({
-        path: "mm.toml",
+        path: "/tmp/e2e/mm.toml",
         toml: expect.stringContaining('speaker = "四国めたん"'),
       }),
     },
@@ -331,7 +351,11 @@ test("Plugin Managerからplugin操作を呼び出せる", async ({ page }) => {
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
   expect(calls).toEqual([
-    { cmd: "install_configured_plugins", args: { projectPath: "mm.toml" } },
+    {
+      cmd: "save_project",
+      args: expect.objectContaining({ path: "/tmp/e2e/mm.toml" }),
+    },
+    { cmd: "install_configured_plugins", args: { projectPath: "/tmp/e2e/mm.toml" } },
     { cmd: "install_plugin", args: { name: "VOICEVOX" } },
     { cmd: "update_plugin", args: { name: "AivisSpeech" } },
     { cmd: "remove_plugin", args: { name: "Template Pack" } },
@@ -353,7 +377,7 @@ test("Plugin ManagerはProject plugin宣言を表示して操作できる", asyn
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
   expect(calls).toContainEqual({
     cmd: "install_configured_plugins",
-    args: { projectPath: "mm.toml" },
+    args: { projectPath: "/tmp/e2e/mm.toml" },
   });
   expect(calls).toContainEqual({ cmd: "install_plugin", args: { name: "gui-theme" } });
 });
@@ -372,7 +396,11 @@ test("Plugin Managerは英語表示でもplugin操作を呼び出せる", async 
 
   const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
   expect(calls).toEqual([
-    { cmd: "install_configured_plugins", args: { projectPath: "mm.toml" } },
+    {
+      cmd: "save_project",
+      args: expect.objectContaining({ path: "/tmp/e2e/mm.toml" }),
+    },
+    { cmd: "install_configured_plugins", args: { projectPath: "/tmp/e2e/mm.toml" } },
     { cmd: "install_plugin", args: { name: "VOICEVOX" } },
   ]);
 });

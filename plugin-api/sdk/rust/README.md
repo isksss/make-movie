@@ -24,10 +24,8 @@ use mm_sdk_rust::{MmPlugin, PluginCategory, PluginMetadata, export_plugin};
 struct MyPlugin;
 
 impl MmPlugin for MyPlugin {
-    fn metadata(&self) -> String {
+    fn metadata(&self) -> PluginMetadata {
         PluginMetadata::new("my-plugin", "0.1.0", PluginCategory::Utility)
-            .to_json()
-            .expect("metadata must be valid")
     }
 }
 

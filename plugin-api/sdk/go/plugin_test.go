@@ -32,11 +32,13 @@ func TestMetadataValidationRejectsInvalidCategory(t *testing.T) {
 }
 
 func TestNoopPluginMetadataIsValid(t *testing.T) {
-	if err := (Metadata{Name: "noop-plugin", Version: "0.1.0", Category: CategoryUtility}).Validate(); err != nil {
+	metadata := NoopPlugin{}.Metadata()
+
+	if err := metadata.Validate(); err != nil {
 		t.Fatalf("metadata should be valid: %v", err)
 	}
 
-	if !strings.Contains(NoopPlugin{}.Metadata(), `"category":"utility"`) {
+	if metadata.Category != CategoryUtility {
 		t.Fatalf("noop metadata should contain category")
 	}
 }
