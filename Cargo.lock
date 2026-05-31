@@ -2040,9 +2040,11 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
+ "flate2",
  "mm-core",
  "mm-plugin-runtime",
  "mm-render",
+ "tar",
  "tempfile",
 ]
 
