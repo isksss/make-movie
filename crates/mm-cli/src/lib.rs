@@ -610,7 +610,7 @@ const ROOT_HELP_JA: &str = r#"mm - 宣言的動画生成エンジン兼デスク
   validate   mm.toml と参照ファイルを検証する
   preview    指定時刻のプレビュー画像を書き出す
   cleanup    cache ディレクトリを削除する
-  package    配布前のプロジェクト検証を行う
+  package    配布用プロジェクトアーカイブを生成する
   doctor     ffmpeg / ffprobe の検出状況を表示する
   plugin     plugin の install / update / remove を実行する
   help       このヘルプ、または指定コマンドのヘルプを表示する
@@ -630,7 +630,7 @@ Commands:
   validate   Validate mm.toml and referenced files
   preview    Export a preview image at a given time
   cleanup    Remove the cache directory
-  package    Validate a project before packaging
+  package    Create a distributable project archive
   doctor     Show ffmpeg / ffprobe detection status
   plugin     Install, update, or remove plugins
   help       Print this help or the help of a given command
