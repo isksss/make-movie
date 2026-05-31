@@ -1,10 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AssetKind } from "../types";
+import type { AssetKind, GpuProbeResult, RenderBackend } from "../types";
 
 export const commands = {
   loadProject: (path: string) => invoke<string>("load_project", { path }),
   saveProject: (path: string, toml: string) => invoke<void>("save_project", { path, toml }),
   buildProject: (path: string) => invoke<void>("build_project", { path }),
+  buildProjectWithBackend: (path: string, backend: RenderBackend) =>
+    invoke<void>("build_project_with_backend", { path, backend }),
+  renderPreviewFrame: (path: string, time: number, backend: RenderBackend) =>
+    invoke<string>("render_preview_frame", { path, time, backend }),
+  probeGpuBackend: () => invoke<GpuProbeResult>("probe_gpu_backend"),
   listSystemFonts: () => invoke<string[]>("list_system_fonts"),
   importAsset: (projectRoot: string, sourcePath: string, kind: AssetKind) =>
     invoke<string>("import_asset", { projectRoot, sourcePath, kind }),

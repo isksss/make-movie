@@ -38,6 +38,11 @@ export const messages = {
     saved: "プロジェクトを保存しました",
     imported: "アセットを取り込みました",
     built: "動画を書き出しました",
+    previewRendered: "Rustプレビューを生成しました",
+    gpuAvailable: "GPU利用可",
+    gpuUnavailable: "GPU未検出",
+    renderBackend: "レンダリング",
+    renderPreviewFrame: "Rustプレビュー生成",
     language: "言語",
     japanese: "日本語",
     english: "English",
@@ -144,6 +149,11 @@ export const messages = {
     saved: "Project saved",
     imported: "Asset imported",
     built: "Movie built",
+    previewRendered: "Rust preview rendered",
+    gpuAvailable: "GPU available",
+    gpuUnavailable: "GPU unavailable",
+    renderBackend: "Rendering",
+    renderPreviewFrame: "Render Rust preview",
     language: "Language",
     japanese: "日本語",
     english: "English",
@@ -259,6 +269,7 @@ export const optionLabels: Record<
     easing: Record<EasingKind, string>;
     ttsProvider: Record<TtsProviderKind, string>;
     gradientDirection: Record<TextGradientDirection, string>;
+    renderBackend: Record<"auto" | "cpu" | "skia" | "gpu", string>;
   }
 > = {
   ja: {
@@ -339,6 +350,12 @@ export const optionLabels: Record<
       vertical: "縦",
       horizontal: "横",
     },
+    renderBackend: {
+      auto: "Auto",
+      cpu: "CPU",
+      skia: "Skia",
+      gpu: "GPU",
+    },
   },
   en: {
     textAlign: {
@@ -417,6 +434,12 @@ export const optionLabels: Record<
     gradientDirection: {
       vertical: "Vertical",
       horizontal: "Horizontal",
+    },
+    renderBackend: {
+      auto: "Auto",
+      cpu: "CPU",
+      skia: "Skia",
+      gpu: "GPU",
     },
   },
 };

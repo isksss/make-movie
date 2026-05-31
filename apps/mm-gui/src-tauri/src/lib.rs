@@ -3,11 +3,14 @@ use mm_core::{
     load_project as load_core_project, save_project as save_core_project,
 };
 use mm_plugin_runtime::{
-    default_global_config_path, default_plugin_dir, PluginManager, PluginReference,
+    PluginManager, PluginReference, default_global_config_path, default_plugin_dir,
 };
 use mm_render::{
-    render_project, system_font_families, BundledFfmpegLocator, FfmpegLocator, RenderOptions,
+    BundledFfmpegLocator, FfmpegLocator, RenderBackend, RenderOptions,
+    probe_gpu_backend as probe_render_gpu_backend, render_frame_with_backend, render_project,
+    system_font_families,
 };
+use serde::Serialize;
 use std::env;
 use std::path::PathBuf;
 
@@ -26,15 +29,60 @@ fn save_project(path: String, toml: String) -> Result<(), String> {
 
 #[tauri::command]
 fn build_project(path: String) -> Result<(), String> {
+    build_project_with_backend(path, "auto".to_string())
+}
+
+#[tauri::command]
+fn build_project_with_backend(path: String, backend: String) -> Result<(), String> {
     let project = load_core_project(&path).map_err(|error| error.to_string())?;
     let project_path = PathBuf::from(&path);
-    let options = gui_render_options(&project_path, &project, bundled_binary_dir());
+    let mut options = gui_render_options(&project_path, &project, bundled_binary_dir());
+    options.backend = parse_render_backend(&backend).map_err(|error| error.to_string())?;
     render_project(&project, &options).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn list_system_fonts() -> Vec<String> {
     system_font_families()
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GuiGpuProbe {
+    available: bool,
+    adapter_name: Option<String>,
+}
+
+#[tauri::command]
+fn probe_gpu_backend() -> GuiGpuProbe {
+    let probe = probe_render_gpu_backend();
+    GuiGpuProbe {
+        available: probe.available,
+        adapter_name: probe.adapter_name,
+    }
+}
+
+#[tauri::command]
+fn render_preview_frame(path: String, time: f64, backend: String) -> Result<String, String> {
+    let project = load_core_project(&path).map_err(|error| error.to_string())?;
+    let project_path = PathBuf::from(&path);
+    let project_root = project_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let output = project_root.join("cache/preview.png");
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let mut options = RenderOptions::new(project_root, &output);
+    options.backend = parse_render_backend(&backend).map_err(|error| error.to_string())?;
+    let frame = render_frame_with_backend(
+        &project,
+        &options,
+        time.clamp(0.0, project.settings.duration),
+    )
+    .map_err(|error| error.to_string())?;
+    frame.save(&output).map_err(|error| error.to_string())?;
+    Ok(output.display().to_string())
 }
 
 #[tauri::command]
@@ -136,10 +184,23 @@ fn bundled_binary_dir() -> Option<PathBuf> {
         .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
 }
 
-fn bundled_ffmpeg_path(bundle_dir: &std::path::Path, project: &mm_core::Project) -> Option<PathBuf> {
+fn bundled_ffmpeg_path(
+    bundle_dir: &std::path::Path,
+    project: &mm_core::Project,
+) -> Option<PathBuf> {
     BundledFfmpegLocator::new(bundle_dir)
         .ffmpeg_path(project)
         .ok()
+}
+
+fn parse_render_backend(value: &str) -> anyhow::Result<RenderBackend> {
+    match value.to_ascii_lowercase().as_str() {
+        "auto" => Ok(RenderBackend::Auto),
+        "cpu" => Ok(RenderBackend::Cpu),
+        "skia" => Ok(RenderBackend::Skia),
+        "gpu" => Ok(RenderBackend::Gpu),
+        other => anyhow::bail!("不明なレンダリングバックエンドです: {other}"),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -147,15 +208,18 @@ pub fn run() {
     let builder = tauri::Builder::default().invoke_handler(tauri::generate_handler![
         load_project,
         save_project,
-            build_project,
-            list_system_fonts,
-            import_asset,
-            import_asset_into_project,
-            install_plugin,
-            install_configured_plugins,
-            update_plugin,
-            remove_plugin
-        ]);
+        build_project,
+        build_project_with_backend,
+        render_preview_frame,
+        probe_gpu_backend,
+        list_system_fonts,
+        import_asset,
+        import_asset_into_project,
+        install_plugin,
+        install_configured_plugins,
+        update_plugin,
+        remove_plugin
+    ]);
 
     #[cfg(feature = "e2e-testing")]
     let builder = builder.plugin(tauri_plugin_playwright::init());
@@ -270,16 +334,16 @@ path = "{}"
             env::set_var("MM_PLUGIN_DIR", &plugin_dir);
         }
 
-        let installed =
-            install_configured_plugins(project_path.display().to_string(), None)
-                .expect("設定済み plugin を install できる");
+        let installed = install_configured_plugins(project_path.display().to_string(), None)
+            .expect("設定済み plugin を install できる");
 
         // SAFETY: This test owns MM_PLUGIN_DIR while holding env_lock.
         unsafe {
             env::remove_var("MM_PLUGIN_DIR");
         }
         assert_eq!(installed, vec!["theme"]);
-        let lock = std::fs::read_to_string(dir.path().join("mm.lock")).expect("project lock を読める");
+        let lock =
+            std::fs::read_to_string(dir.path().join("mm.lock")).expect("project lock を読める");
         assert!(lock.contains("theme"));
         assert!(plugin_dir.join("theme/theme.wasm").exists());
     }
@@ -313,6 +377,30 @@ path = "{}"
         let options = gui_render_options(&project_path, &project, Some(dir.path().join("bundle")));
 
         assert_eq!(options.ffmpeg_path, None);
+    }
+
+    #[test]
+    fn parse_render_backend_accepts_gui_values() {
+        assert_eq!(parse_render_backend("auto").unwrap(), RenderBackend::Auto);
+        assert_eq!(parse_render_backend("cpu").unwrap(), RenderBackend::Cpu);
+        assert_eq!(parse_render_backend("skia").unwrap(), RenderBackend::Skia);
+        assert_eq!(parse_render_backend("gpu").unwrap(), RenderBackend::Gpu);
+        assert!(parse_render_backend("metal").is_err());
+    }
+
+    #[test]
+    fn render_preview_frame_writes_png_with_selected_backend() {
+        let dir = tempfile::tempdir().expect("temp dir を作成できる");
+        let project_path = dir.path().join("mm.toml");
+        std::fs::write(&project_path, sample_project_toml("Preview"))
+            .expect("project TOML を書ける");
+
+        let output =
+            render_preview_frame(project_path.display().to_string(), 0.25, "cpu".to_string())
+                .expect("preview frame を生成できる");
+
+        assert_eq!(PathBuf::from(&output), dir.path().join("cache/preview.png"));
+        assert!(dir.path().join("cache/preview.png").exists());
     }
 
     fn sample_project_toml(title: &str) -> String {
