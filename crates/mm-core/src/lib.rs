@@ -666,6 +666,75 @@ pub struct Keyframe {
     pub value: f32,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExternalAnalysisResult {
+    pub source_width: u32,
+    pub source_height: u32,
+    #[serde(default)]
+    pub targets: Vec<ExternalAnalysisTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExternalAnalysisTarget {
+    pub id: String,
+    pub kind: ExternalAnalysisKind,
+    #[serde(default)]
+    pub frames: Vec<ExternalAnalysisFrame>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalAnalysisKind {
+    Face,
+    Person,
+    Object,
+    Pose,
+    Hand,
+    Scene,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ExternalAnalysisFrame {
+    pub time: f64,
+    pub bbox: ExternalAnalysisBox,
+    #[serde(default)]
+    pub confidence: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ExternalAnalysisBox {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternalAnalysisOptions {
+    pub target_id: Option<String>,
+    pub sample_interval: Option<f64>,
+    pub smooth_window: usize,
+    pub clamp_bounds: bool,
+    pub generate_position: bool,
+    pub generate_crop: bool,
+    pub easing: Easing,
+}
+
+impl Default for ExternalAnalysisOptions {
+    fn default() -> Self {
+        Self {
+            target_id: None,
+            sample_interval: None,
+            smooth_window: 1,
+            clamp_bounds: true,
+            generate_position: true,
+            generate_crop: true,
+            easing: Easing::Linear,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Easing {
@@ -676,6 +745,215 @@ pub enum Easing {
     EaseOutBack,
     Bounce,
     Elastic,
+}
+
+pub fn external_analysis_to_animations(
+    analysis: &ExternalAnalysisResult,
+    options: &ExternalAnalysisOptions,
+) -> Result<Vec<Animation>> {
+    if analysis.source_width == 0 || analysis.source_height == 0 {
+        bail!("external analysis source size must be greater than 0");
+    }
+    if !options.generate_position && !options.generate_crop {
+        bail!("external analysis must generate position or crop animations");
+    }
+    let target = select_external_analysis_target(analysis, options)?;
+    let frames = sampled_external_analysis_frames(target, options)?;
+    let boxes: Vec<ExternalAnalysisBox> = frames
+        .iter()
+        .map(|frame| normalized_analysis_box(frame.bbox, analysis, options.clamp_bounds))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut animations = Vec::new();
+    if options.generate_position {
+        animations.push(analysis_animation(
+            AnimatedProperty::X,
+            options.easing,
+            &frames,
+            smoothed_values(
+                boxes.iter().map(|bbox| bbox.x + bbox.width / 2.0).collect(),
+                options.smooth_window,
+            ),
+        ));
+        animations.push(analysis_animation(
+            AnimatedProperty::Y,
+            options.easing,
+            &frames,
+            smoothed_values(
+                boxes
+                    .iter()
+                    .map(|bbox| bbox.y + bbox.height / 2.0)
+                    .collect(),
+                options.smooth_window,
+            ),
+        ));
+    }
+    if options.generate_crop {
+        for (property, values) in [
+            (
+                AnimatedProperty::CropX,
+                boxes.iter().map(|bbox| bbox.x).collect(),
+            ),
+            (
+                AnimatedProperty::CropY,
+                boxes.iter().map(|bbox| bbox.y).collect(),
+            ),
+            (
+                AnimatedProperty::CropWidth,
+                boxes.iter().map(|bbox| bbox.width).collect(),
+            ),
+            (
+                AnimatedProperty::CropHeight,
+                boxes.iter().map(|bbox| bbox.height).collect(),
+            ),
+        ] {
+            animations.push(analysis_animation(
+                property,
+                options.easing,
+                &frames,
+                smoothed_values(values, options.smooth_window),
+            ));
+        }
+    }
+    Ok(animations)
+}
+
+pub fn apply_external_analysis_to_layer(
+    project: &mut Project,
+    layer_id: &str,
+    analysis: &ExternalAnalysisResult,
+    options: &ExternalAnalysisOptions,
+) -> Result<()> {
+    let animations = external_analysis_to_animations(analysis, options)?;
+    let generated_properties: Vec<AnimatedProperty> = animations
+        .iter()
+        .map(|animation| animation.property)
+        .collect();
+    let layer = project
+        .tracks
+        .iter_mut()
+        .flat_map(|track| track.layers.iter_mut())
+        .find(|layer| layer.id == layer_id)
+        .with_context(|| format!("layer '{layer_id}' が見つかりません"))?;
+
+    layer
+        .animations
+        .retain(|animation| !generated_properties.contains(&animation.property));
+    layer.animations.extend(animations);
+    Ok(())
+}
+
+fn select_external_analysis_target<'a>(
+    analysis: &'a ExternalAnalysisResult,
+    options: &ExternalAnalysisOptions,
+) -> Result<&'a ExternalAnalysisTarget> {
+    let target = match &options.target_id {
+        Some(target_id) => analysis
+            .targets
+            .iter()
+            .find(|target| target.id == *target_id),
+        None => analysis.targets.first(),
+    };
+    target.context("external analysis target が見つかりません")
+}
+
+fn sampled_external_analysis_frames(
+    target: &ExternalAnalysisTarget,
+    options: &ExternalAnalysisOptions,
+) -> Result<Vec<ExternalAnalysisFrame>> {
+    if target.frames.is_empty() {
+        bail!("external analysis target has no frames");
+    }
+    let mut frames = target.frames.clone();
+    frames.sort_by(|left, right| left.time.total_cmp(&right.time));
+    for frame in &frames {
+        if frame.time < 0.0 {
+            bail!("external analysis frame time must be 0 or greater");
+        }
+    }
+    if let Some(interval) = options.sample_interval {
+        if interval <= 0.0 {
+            bail!("external analysis sample_interval must be greater than 0");
+        }
+        let mut sampled = Vec::new();
+        let mut last_time: Option<f64> = None;
+        for frame in frames {
+            if last_time.is_none_or(|time| frame.time + f64::EPSILON >= time + interval) {
+                last_time = Some(frame.time);
+                sampled.push(frame);
+            }
+        }
+        Ok(sampled)
+    } else {
+        Ok(frames)
+    }
+}
+
+fn normalized_analysis_box(
+    bbox: ExternalAnalysisBox,
+    analysis: &ExternalAnalysisResult,
+    clamp_bounds: bool,
+) -> Result<ExternalAnalysisBox> {
+    if bbox.width <= 0.0 || bbox.height <= 0.0 {
+        bail!("external analysis bbox width and height must be greater than 0");
+    }
+    if !clamp_bounds {
+        return Ok(bbox);
+    }
+    let max_width = analysis.source_width as f32;
+    let max_height = analysis.source_height as f32;
+    let left = bbox.x.clamp(0.0, max_width);
+    let top = bbox.y.clamp(0.0, max_height);
+    let right = (bbox.x + bbox.width).clamp(0.0, max_width);
+    let bottom = (bbox.y + bbox.height).clamp(0.0, max_height);
+    let width = (right - left).max(0.0);
+    let height = (bottom - top).max(0.0);
+    if width <= 0.0 || height <= 0.0 {
+        bail!("external analysis bbox is outside source bounds");
+    }
+    Ok(ExternalAnalysisBox {
+        x: left,
+        y: top,
+        width,
+        height,
+    })
+}
+
+fn smoothed_values(values: Vec<f32>, window: usize) -> Vec<f32> {
+    if window <= 1 || values.len() <= 1 {
+        return values;
+    }
+    let radius = window / 2;
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            let start = index.saturating_sub(radius);
+            let end = (index + radius + 1).min(values.len());
+            let slice = &values[start..end];
+            slice.iter().sum::<f32>() / slice.len() as f32
+        })
+        .collect()
+}
+
+fn analysis_animation(
+    property: AnimatedProperty,
+    easing: Easing,
+    frames: &[ExternalAnalysisFrame],
+    values: Vec<f32>,
+) -> Animation {
+    Animation {
+        property,
+        easing,
+        keyframes: frames
+            .iter()
+            .zip(values)
+            .map(|(frame, value)| Keyframe {
+                time: frame.time,
+                value,
+            })
+            .collect(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1156,6 +1434,69 @@ mod tests {
         }
     }
 
+    fn sample_video_project(asset_path: PathBuf) -> Project {
+        let mut project = sample_project(asset_path);
+        project.assets[0].kind = AssetKind::Video;
+        project.tracks[0].layers[0].content = LayerContent::Video(VideoLayer {
+            asset_id: "image1".to_string(),
+            crop: None,
+            trim_start: None,
+            trim_end: None,
+            fit: None,
+        });
+        project
+    }
+
+    fn sample_analysis() -> ExternalAnalysisResult {
+        ExternalAnalysisResult {
+            source_width: 640,
+            source_height: 360,
+            targets: vec![ExternalAnalysisTarget {
+                id: "target-1".to_string(),
+                kind: ExternalAnalysisKind::Person,
+                frames: vec![
+                    ExternalAnalysisFrame {
+                        time: 0.0,
+                        bbox: ExternalAnalysisBox {
+                            x: 10.0,
+                            y: 20.0,
+                            width: 100.0,
+                            height: 80.0,
+                        },
+                        confidence: Some(0.9),
+                    },
+                    ExternalAnalysisFrame {
+                        time: 0.5,
+                        bbox: ExternalAnalysisBox {
+                            x: 30.0,
+                            y: 40.0,
+                            width: 120.0,
+                            height: 90.0,
+                        },
+                        confidence: Some(0.8),
+                    },
+                    ExternalAnalysisFrame {
+                        time: 1.0,
+                        bbox: ExternalAnalysisBox {
+                            x: 70.0,
+                            y: 80.0,
+                            width: 160.0,
+                            height: 110.0,
+                        },
+                        confidence: Some(0.95),
+                    },
+                ],
+            }],
+        }
+    }
+
+    fn animation(animations: &[Animation], property: AnimatedProperty) -> &Animation {
+        animations
+            .iter()
+            .find(|animation| animation.property == property)
+            .expect("animation が存在する")
+    }
+
     #[test]
     fn project_round_trip_toml() -> Result<()> {
         let dir = tempfile::tempdir()?;
@@ -1216,6 +1557,186 @@ mod tests {
         let project = sample_project(PathBuf::from("media/image/sample.png"));
 
         validate_project(&project, dir.path())
+    }
+
+    #[test]
+    fn external_analysis_generates_position_and_crop_keyframes() -> Result<()> {
+        let animations = external_analysis_to_animations(
+            &sample_analysis(),
+            &ExternalAnalysisOptions::default(),
+        )?;
+
+        assert_eq!(animations.len(), 6);
+        assert_eq!(
+            animation(&animations, AnimatedProperty::X).keyframes[0],
+            Keyframe {
+                time: 0.0,
+                value: 60.0
+            }
+        );
+        assert_eq!(
+            animation(&animations, AnimatedProperty::Y).keyframes[1],
+            Keyframe {
+                time: 0.5,
+                value: 85.0
+            }
+        );
+        assert_eq!(
+            animation(&animations, AnimatedProperty::CropWidth).keyframes[2],
+            Keyframe {
+                time: 1.0,
+                value: 160.0
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn external_analysis_samples_smooths_and_clamps_bounds() -> Result<()> {
+        let analysis = ExternalAnalysisResult {
+            source_width: 100,
+            source_height: 100,
+            targets: vec![ExternalAnalysisTarget {
+                id: "target-1".to_string(),
+                kind: ExternalAnalysisKind::Object,
+                frames: vec![
+                    ExternalAnalysisFrame {
+                        time: 0.0,
+                        bbox: ExternalAnalysisBox {
+                            x: -10.0,
+                            y: -5.0,
+                            width: 40.0,
+                            height: 30.0,
+                        },
+                        confidence: None,
+                    },
+                    ExternalAnalysisFrame {
+                        time: 0.1,
+                        bbox: ExternalAnalysisBox {
+                            x: 10.0,
+                            y: 10.0,
+                            width: 10.0,
+                            height: 10.0,
+                        },
+                        confidence: None,
+                    },
+                    ExternalAnalysisFrame {
+                        time: 0.5,
+                        bbox: ExternalAnalysisBox {
+                            x: 80.0,
+                            y: 70.0,
+                            width: 50.0,
+                            height: 60.0,
+                        },
+                        confidence: None,
+                    },
+                ],
+            }],
+        };
+        let options = ExternalAnalysisOptions {
+            sample_interval: Some(0.4),
+            smooth_window: 3,
+            ..ExternalAnalysisOptions::default()
+        };
+
+        let animations = external_analysis_to_animations(&analysis, &options)?;
+
+        let crop_x = animation(&animations, AnimatedProperty::CropX);
+        assert_eq!(crop_x.keyframes.len(), 2);
+        assert_eq!(crop_x.keyframes[0].time, 0.0);
+        assert_eq!(crop_x.keyframes[1].time, 0.5);
+        assert_eq!(crop_x.keyframes[0].value, 40.0);
+        assert_eq!(crop_x.keyframes[1].value, 40.0);
+        let crop_width = animation(&animations, AnimatedProperty::CropWidth);
+        assert_eq!(crop_width.keyframes[1].value, 25.0);
+        Ok(())
+    }
+
+    #[test]
+    fn apply_external_analysis_updates_layer_without_replacing_other_animations() -> Result<()> {
+        let mut project = sample_video_project(PathBuf::from("media/video/sample.mp4"));
+        project.tracks[0].layers[0].animations.push(Animation {
+            property: AnimatedProperty::Opacity,
+            easing: Easing::EaseInOut,
+            keyframes: vec![Keyframe {
+                time: 0.0,
+                value: 1.0,
+            }],
+        });
+
+        apply_external_analysis_to_layer(
+            &mut project,
+            "layer1",
+            &sample_analysis(),
+            &ExternalAnalysisOptions::default(),
+        )?;
+
+        let layer = &project.tracks[0].layers[0];
+        assert!(
+            layer
+                .animations
+                .iter()
+                .any(|animation| animation.property == AnimatedProperty::Opacity)
+        );
+        assert!(
+            layer
+                .animations
+                .iter()
+                .any(|animation| animation.property == AnimatedProperty::CropHeight)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn apply_external_analysis_failure_does_not_mutate_project() {
+        let mut project = sample_video_project(PathBuf::from("media/video/sample.mp4"));
+        let original = project.clone();
+        let empty = ExternalAnalysisResult {
+            source_width: 640,
+            source_height: 360,
+            targets: vec![],
+        };
+
+        let err = apply_external_analysis_to_layer(
+            &mut project,
+            "layer1",
+            &empty,
+            &ExternalAnalysisOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("target"));
+        assert_eq!(project, original);
+    }
+
+    #[test]
+    fn external_analysis_animations_round_trip_toml() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let asset_path = dir.path().join("media/video/sample.mp4");
+        fs::create_dir_all(asset_path.parent().unwrap())?;
+        fs::write(&asset_path, [])?;
+        let mut project = sample_video_project(PathBuf::from("media/video/sample.mp4"));
+        let project_path = dir.path().join("mm.toml");
+
+        apply_external_analysis_to_layer(
+            &mut project,
+            "layer1",
+            &sample_analysis(),
+            &ExternalAnalysisOptions::default(),
+        )?;
+        save_project(&project, &project_path)?;
+        let loaded = load_project(&project_path)?;
+
+        let animations = &loaded.tracks[0].layers[0].animations;
+        assert_eq!(
+            animation(animations, AnimatedProperty::CropX).keyframes[0].value,
+            10.0
+        );
+        assert_eq!(
+            animation(animations, AnimatedProperty::X).keyframes[2].value,
+            150.0
+        );
+        Ok(())
     }
 
     #[test]

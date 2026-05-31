@@ -19,6 +19,7 @@ mm-core = { path = "../../../crates/mm-core" }
 mm-plugin-runtime = { path = "../../../crates/mm-plugin-runtime" }
 mm-render = { path = "../../../crates/mm-render" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-playwright = "0.2.2"
 toml = "0.8"
