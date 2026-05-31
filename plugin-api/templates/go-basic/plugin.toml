@@ -1,0 +1,12 @@
+name = "go-basic"
+version = "0.1.0"
+component = "dist/go-basic.wasm"
+
+[metadata]
+display_name = "Go Basic"
+category = "utility"
+description = "Go plugin template"
+
+[source]
+repository = "local"
+path = "./dist/go-basic.wasm"

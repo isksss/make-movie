@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: make-movie 開発メモ
+    url: https://github.com/isksss/make-movie
+    about: Issue化前のメモや設計確認はリポジトリ内ドキュメントを参照してください。
