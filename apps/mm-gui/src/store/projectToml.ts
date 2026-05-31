@@ -310,6 +310,7 @@ function appendContent(lines: string[], project: ProjectState, layer: TimelineLa
   if (layer.contentKind === "text") {
     lines.push(
       `text = ${quote(layer.text.text || layer.label)}`,
+      ...(layer.text.fontFamily ? [`font_family = ${quote(layer.text.fontFamily)}`] : []),
       `font_size = ${layer.text.fontSize}`,
       `color = ${quote(layer.text.color)}`,
       `letter_spacing = ${layer.text.letterSpacing}`,
@@ -633,6 +634,8 @@ function assignContent(layer: TimelineLayer, key: string, value: string | number
     }
   } else if (key === "font_size") {
     layer.text = { ...layer.text, fontSize: Number(value) };
+  } else if (key === "font_family") {
+    layer.text = { ...layer.text, fontFamily: String(value) };
   } else if (key === "color") {
     layer.text = { ...layer.text, color: String(value) };
   } else if (key === "letter_spacing") {
