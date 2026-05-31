@@ -28,12 +28,14 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@srsholmes/tauri-playwright": "^0.2.2",
+    "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2.11.2",
     "@types/node": "^24.10.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "oxlint": "^1.67.0",
     "prettier": "^3.7.4",
+    "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
     "vitest": "^4.0.15"
   }
