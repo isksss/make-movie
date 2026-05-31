@@ -574,6 +574,86 @@ fn asset_path(
     Ok(options.project_root.join(&asset.path))
 }
 
+fn preview_ffmpeg_path(project: &Project, options: &RenderOptions) -> Result<PathBuf> {
+    match &options.ffmpeg_path {
+        Some(path) => Ok(path.clone()),
+        None => SystemFfmpegLocator.ffmpeg_path(project),
+    }
+}
+
+fn decode_video_layer_frame(
+    project: &Project,
+    options: &RenderOptions,
+    layer: &Layer,
+    content: &VideoLayer,
+    local_time: f64,
+) -> Result<RgbaImage> {
+    let trim_start = content.trim_start.unwrap_or(0.0).max(0.0);
+    let source_time = trim_start + local_time.max(0.0);
+    if let Some(trim_end) = content.trim_end {
+        if source_time >= trim_end {
+            return Ok(RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 0])));
+        }
+    }
+
+    let path = asset_path(project, options, &content.asset_id, AssetKind::Video)?;
+    let ffmpeg = preview_ffmpeg_path(project, options)?;
+    let source_time = source_time.to_string();
+    let input_path = path.display().to_string();
+    let output = Command::new(&ffmpeg)
+        .args([
+            "-v",
+            "error",
+            "-ss",
+            &source_time,
+            "-i",
+            &input_path,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "png",
+            "-",
+        ])
+        .output()
+        .with_context(|| {
+            format!(
+                "Video layer の frame decode を開始できません: layer={}, ffmpeg={}, asset={}",
+                layer.id,
+                ffmpeg.display(),
+                path.display()
+            )
+        })?;
+
+    if !output.status.success() {
+        bail!(
+            "Video layer の frame decode に失敗しました: layer={}, asset={}, stderr={}",
+            layer.id,
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    if output.stdout.is_empty() {
+        bail!(
+            "Video layer の frame decode 結果が空です: layer={}, asset={}, time={}",
+            layer.id,
+            path.display(),
+            source_time
+        );
+    }
+
+    image::load_from_memory(&output.stdout)
+        .with_context(|| {
+            format!(
+                "Video layer の decoded frame を読み込めません: layer={}, asset={}",
+                layer.id,
+                path.display()
+            )
+        })
+        .map(|image| image.to_rgba8())
+}
+
 fn render_frame_for_encode(
     project: &Project,
     options: &RenderOptions,
@@ -595,7 +675,7 @@ fn render_frame_for_encode(
                 project.settings.height,
                 Rgba([0, 0, 0, 0]),
             )?;
-            render_frame_on_base(project, options, time, frame)
+            render_frame_on_base(project, options, time, frame, false)
         }
     }
 }
@@ -610,7 +690,7 @@ pub fn render_transparent_overlay_frame(
         project.settings.height,
         Rgba([0, 0, 0, 0]),
     );
-    render_frame_on_base(project, options, time, frame)
+    render_frame_on_base(project, options, time, frame, false)
 }
 
 pub fn render_frame(project: &Project, options: &RenderOptions, time: f64) -> Result<RgbaImage> {
@@ -619,7 +699,7 @@ pub fn render_frame(project: &Project, options: &RenderOptions, time: f64) -> Re
         project.settings.height,
         options.background,
     );
-    render_frame_on_base(project, options, time, frame)
+    render_frame_on_base(project, options, time, frame, true)
 }
 
 pub fn render_frame_gpu_hybrid(
@@ -642,7 +722,7 @@ fn render_frame_gpu_hybrid_with_renderer(
         project.settings.height,
         options.background,
     )?;
-    render_frame_on_base(project, options, time, frame)
+    render_frame_on_base(project, options, time, frame, true)
 }
 
 fn render_frame_on_base(
@@ -650,12 +730,14 @@ fn render_frame_on_base(
     options: &RenderOptions,
     time: f64,
     mut frame: RgbaImage,
+    include_video_layers: bool,
 ) -> Result<RgbaImage> {
     let mut layers = project
         .tracks
         .iter()
         .flat_map(|track| track.layers.iter())
         .filter(|layer| layer.start <= time && time < layer.start + layer.duration)
+        .filter(|layer| include_video_layers || !matches!(layer.content, LayerContent::Video(_)))
         .collect::<Vec<_>>();
     layers.sort_by_key(|layer| layer.z_index);
 
@@ -857,6 +939,16 @@ fn draw_layer_content(
             let image = apply_mask(image, content.mask.as_ref(), &options.project_root)?;
             draw_image(frame, &image, transform, content.fit);
         }
+        LayerContent::Video(content) => {
+            let mut image =
+                decode_video_layer_frame(project, options, layer, content, time - layer.start)?;
+            image = apply_crop(
+                image,
+                resolve_layer_crop(layer, content.crop, time - layer.start),
+            );
+            image = apply_image_effects(image, &layer.effects);
+            draw_image(frame, &image, transform, content.fit);
+        }
         LayerContent::Text(content) => {
             let font = load_font(project, options, content.font_asset_id.as_deref())?;
             draw_text_layer(frame, content, transform, &font);
@@ -893,7 +985,7 @@ fn draw_layer_content(
                 );
             }
         }
-        LayerContent::Video(_) | LayerContent::Audio(_) | LayerContent::Voice(_) => {}
+        LayerContent::Audio(_) | LayerContent::Voice(_) => {}
     }
     Ok(())
 }
@@ -2950,6 +3042,112 @@ mod tests {
     }
 
     #[test]
+    fn render_frame_draws_video_layer_from_ffmpeg_frame() -> Result<()> {
+        let Some(ffmpeg) = available_ffmpeg() else {
+            return Ok(());
+        };
+        let dir = tempfile::tempdir()?;
+        let video_path = dir.path().join("media/video/red.mp4");
+        std::fs::create_dir_all(video_path.parent().unwrap())?;
+        let status = Command::new(&ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:size=32x24:rate=10:duration=1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&video_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Ok(());
+        }
+        let project = video_project(
+            PathBuf::from("media/video/red.mp4"),
+            VideoLayer {
+                asset_id: "video".to_string(),
+                crop: None,
+                trim_start: Some(0.0),
+                trim_end: Some(1.0),
+                fit: None,
+            },
+        );
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.ffmpeg_path = Some(ffmpeg);
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame(&project, &options, 0.2)?;
+        let pixel = frame.get_pixel(16, 12);
+
+        assert!(pixel[0] > 180);
+        assert!(pixel[1] < 80);
+        assert!(pixel[2] < 80);
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_applies_video_trim_and_crop() -> Result<()> {
+        let Some(ffmpeg) = available_ffmpeg() else {
+            return Ok(());
+        };
+        let dir = tempfile::tempdir()?;
+        let video_path = dir.path().join("media/video/trim-crop.mp4");
+        std::fs::create_dir_all(video_path.parent().unwrap())?;
+        let status = Command::new(&ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:size=16x16:rate=10:duration=0.5",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:size=16x16:rate=10:duration=0.5",
+                "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p[v]",
+                "-map",
+                "[v]",
+            ])
+            .arg(&video_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Ok(());
+        }
+        let project = video_project(
+            PathBuf::from("media/video/trim-crop.mp4"),
+            VideoLayer {
+                asset_id: "video".to_string(),
+                crop: Some(Crop {
+                    x: 4,
+                    y: 4,
+                    width: 8,
+                    height: 8,
+                }),
+                trim_start: Some(0.6),
+                trim_end: Some(0.9),
+                fit: Some(FitMode::Stretch),
+            },
+        );
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.ffmpeg_path = Some(ffmpeg);
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame(&project, &options, 0.0)?;
+        let pixel = frame.get_pixel(16, 12);
+
+        assert!(pixel[2] > 120);
+        assert!(pixel[0] < 100);
+        Ok(())
+    }
+
+    #[test]
     fn media_plan_synthesizes_voice_layer_to_cached_wav() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let endpoint = start_voicevox_mock(mm_core::encode_wav_audio(&mm_core::AudioBuffer {
@@ -3189,6 +3387,59 @@ mod tests {
         assert!(streams.lines().any(|line| line == "video"));
         assert!(streams.lines().any(|line| line == "audio"));
         Ok(())
+    }
+
+    fn available_ffmpeg() -> Option<PathBuf> {
+        which::which("ffmpeg").ok()
+    }
+
+    fn video_project(path: PathBuf, content: VideoLayer) -> Project {
+        Project {
+            settings: ProjectSettings {
+                title: "動画プレビュー".to_string(),
+                width: 32,
+                height: 24,
+                fps: 10,
+                sample_rate: 48000,
+                duration: 1.0,
+                output: PathBuf::from("output/movie.mp4"),
+                asset_mode: AssetMode::Copy,
+                ffmpeg: None,
+            },
+            assets: vec![Asset {
+                id: "video".to_string(),
+                kind: AssetKind::Video,
+                path,
+            }],
+            tracks: vec![Track {
+                id: "v1".to_string(),
+                name: "V1".to_string(),
+                kind: TrackKind::Video,
+                layers: vec![Layer {
+                    id: "video".to_string(),
+                    group_id: None,
+                    start: 0.0,
+                    duration: 1.0,
+                    z_index: 0,
+                    content: LayerContent::Video(content),
+                    transform: Transform {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 32.0,
+                        height: 24.0,
+                        scale: 1.0,
+                        rotation: 0.0,
+                        opacity: 1.0,
+                    },
+                    effects: vec![],
+                    animations: vec![],
+                    transition: None,
+                }],
+            }],
+            scenes: vec![],
+            groups: vec![],
+            plugins: vec![],
+        }
     }
 
     fn has_non_background_pixel(frame: &RgbaImage, background: Rgba<u8>) -> bool {
