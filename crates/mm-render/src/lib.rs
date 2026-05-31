@@ -811,13 +811,29 @@ fn render_frame_gpu_hybrid_on_base(
     for layer in layers {
         let local_time = time - layer.start;
         let transform = resolve_layer_transform(layer, local_time);
-        if let Some(gpu_layer) = gpu_image_layer(project, options, layer, transform, time)? {
+        if let Some(gpu_layer) = gpu_composite_layer(project, options, layer, transform, time)? {
             frame = renderer.composite_image_layers(frame, &[gpu_layer])?;
         } else {
             draw_layer(project, options, &mut frame, layer, transform, time)?;
         }
     }
     Ok(frame)
+}
+
+fn gpu_composite_layer(
+    project: &Project,
+    options: &RenderOptions,
+    layer: &Layer,
+    transform: Transform,
+    time: f64,
+) -> Result<Option<GpuImageLayer>> {
+    match &layer.content {
+        LayerContent::Image(_) => gpu_image_layer(project, options, layer, transform, time),
+        LayerContent::Text(_) | LayerContent::Subtitle(_) => {
+            gpu_rasterized_layer(project, options, layer, transform, time)
+        }
+        LayerContent::Video(_) | LayerContent::Audio(_) | LayerContent::Voice(_) => Ok(None),
+    }
 }
 
 fn gpu_image_layer(
@@ -872,6 +888,29 @@ fn gpu_image_layer(
         y,
         opacity: transform.opacity,
         rotation: transform.rotation,
+    }))
+}
+
+fn gpu_rasterized_layer(
+    project: &Project,
+    options: &RenderOptions,
+    layer: &Layer,
+    transform: Transform,
+    time: f64,
+) -> Result<Option<GpuImageLayer>> {
+    let mut image = RgbaImage::from_pixel(
+        project.settings.width,
+        project.settings.height,
+        Rgba([0, 0, 0, 0]),
+    );
+    draw_layer_content(project, options, &mut image, layer, transform, time)?;
+    apply_transition_to_frame(&mut image, layer, time - layer.start);
+    Ok(Some(GpuImageLayer {
+        image,
+        x: 0,
+        y: 0,
+        opacity: 1.0,
+        rotation: 0.0,
     }))
 }
 
@@ -3811,6 +3850,72 @@ mod tests {
     }
 
     #[test]
+    fn render_frame_gpu_hybrid_composites_text_layer_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let project = text_project();
+        let options = RenderOptions::new(".", "output.mp4");
+        let layer = &project.tracks[0].layers[0];
+        let transform = resolve_layer_transform(layer, 0.5);
+
+        let gpu_layer = gpu_composite_layer(&project, &options, layer, transform, 0.5)?
+            .context("Text layer がGPU layerに変換されていません")?;
+        assert_eq!(gpu_layer.image.dimensions(), (320, 180));
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 0.5)?;
+
+        assert!(has_non_background_pixel(&frame, options.background));
+        assert_cpu_gpu_first_non_background_pixel_close(&project, &options, 0.5, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_gpu_hybrid_composites_subtitle_layer_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let subtitle_path = dir.path().join("media/subtitle/main.srt");
+        std::fs::create_dir_all(subtitle_path.parent().unwrap())?;
+        std::fs::write(
+            &subtitle_path,
+            "1\n00:00:00,000 --> 00:00:01,000\nSubtitle text\n",
+        )?;
+        let mut project = text_project();
+        project.assets.push(Asset {
+            id: "subtitle".to_string(),
+            kind: AssetKind::Subtitle,
+            path: PathBuf::from("media/subtitle/main.srt"),
+        });
+        project.tracks[0].layers[0].content = LayerContent::Subtitle(SubtitleLayer {
+            asset_id: "subtitle".to_string(),
+        });
+        project.tracks[0].layers[0].transform = Transform {
+            x: 160.0,
+            y: 120.0,
+            width: 260.0,
+            height: 48.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        let options = RenderOptions::new(dir.path(), "output.mp4");
+        let layer = &project.tracks[0].layers[0];
+        let transform = resolve_layer_transform(layer, 0.5);
+
+        let gpu_layer = gpu_composite_layer(&project, &options, layer, transform, 0.5)?
+            .context("Subtitle layer がGPU layerに変換されていません")?;
+        assert_eq!(gpu_layer.image.dimensions(), (320, 180));
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 0.5)?;
+
+        assert!(has_non_background_pixel(&frame, options.background));
+        assert_cpu_gpu_first_non_background_pixel_close(&project, &options, 0.5, 2);
+        Ok(())
+    }
+
+    #[test]
     fn render_frame_gpu_hybrid_composites_image_layer_when_available() -> Result<()> {
         if !probe_gpu_backend().available {
             return Ok(());
@@ -4142,6 +4247,48 @@ mod tests {
         transitioned_layer.transition = Some(Transition::CrossFade { duration: 1.0 });
         transitioned.tracks[0].layers = vec![transitioned_layer];
         assert_cpu_gpu_pixel_close(&transitioned, &options, 0.5, 4, 4, 1);
+
+        let mut text = text_project();
+        text.settings.width = 160;
+        text.settings.height = 90;
+        text.tracks[0].layers[0].transform = Transform {
+            x: 80.0,
+            y: 42.0,
+            width: 120.0,
+            height: 32.0,
+            scale: 0.6,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        assert_cpu_gpu_first_non_background_pixel_close(&text, &options, 0.5, 2);
+
+        let subtitle_path = dir.path().join("media/subtitle/main.srt");
+        fs::create_dir_all(subtitle_path.parent().unwrap())?;
+        fs::write(
+            &subtitle_path,
+            "1\n00:00:00,000 --> 00:00:01,000\nSubtitle text\n",
+        )?;
+        let mut subtitle = text_project();
+        subtitle.settings.width = 160;
+        subtitle.settings.height = 90;
+        subtitle.assets = vec![Asset {
+            id: "subtitle".to_string(),
+            kind: AssetKind::Subtitle,
+            path: PathBuf::from("media/subtitle/main.srt"),
+        }];
+        subtitle.tracks[0].layers[0].content = LayerContent::Subtitle(SubtitleLayer {
+            asset_id: "subtitle".to_string(),
+        });
+        subtitle.tracks[0].layers[0].transform = Transform {
+            x: 80.0,
+            y: 54.0,
+            width: 140.0,
+            height: 28.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        assert_cpu_gpu_first_non_background_pixel_close(&subtitle, &options, 0.5, 2);
 
         Ok(())
     }
@@ -4828,6 +4975,28 @@ mod tests {
         assert!(
             rgba_close(cpu_pixel, gpu_pixel, tolerance),
             "CPU/GPU pixel が一致しません: ({x}, {y}) cpu={cpu_pixel:?} gpu={gpu_pixel:?}"
+        );
+    }
+
+    fn assert_cpu_gpu_first_non_background_pixel_close(
+        project: &Project,
+        options: &RenderOptions,
+        time: f64,
+        tolerance: u8,
+    ) {
+        let cpu = render_frame(project, options, time).expect("CPU renderer が失敗しました");
+        let gpu =
+            render_frame_gpu_hybrid(project, options, time).expect("GPU renderer が失敗しました");
+        let Some((x, y, cpu_pixel)) = cpu
+            .enumerate_pixels()
+            .find(|(_, _, pixel)| **pixel != options.background)
+        else {
+            panic!("CPU renderer に非背景 pixel がありません");
+        };
+        let gpu_pixel = *gpu.get_pixel(x, y);
+        assert!(
+            rgba_close(*cpu_pixel, gpu_pixel, tolerance),
+            "CPU/GPU text pixel が一致しません: ({x}, {y}) cpu={cpu_pixel:?} gpu={gpu_pixel:?}"
         );
     }
 
