@@ -212,9 +212,11 @@ version = "2.0.0"
     .unwrap();
 
     let mut command = Command::cargo_bin("mm").unwrap();
-    command
+    let assert = command
         .current_dir(dir.path())
         .env("XDG_DATA_HOME", &data_home)
+        .arg("--lang")
+        .arg("en")
         .arg("plugin")
         .arg("install")
         .arg("--project")
@@ -223,6 +225,8 @@ version = "2.0.0"
         .arg("global.toml")
         .assert()
         .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("configured plugins installed"));
 
     let lock = fs::read_to_string(dir.path().join("mm.lock")).unwrap();
     assert!(lock.contains("global-theme"));
@@ -257,6 +261,8 @@ version = "1.0.0"
         .unwrap()
         .current_dir(dir.path())
         .env("XDG_DATA_HOME", &data_home)
+        .arg("--lang")
+        .arg("ja")
         .arg("plugin")
         .arg("install")
         .arg("--project")
@@ -264,10 +270,12 @@ version = "1.0.0"
         .assert()
         .success();
 
-    Command::cargo_bin("mm")
+    let update_assert = Command::cargo_bin("mm")
         .unwrap()
         .current_dir(dir.path())
         .env("XDG_DATA_HOME", &data_home)
+        .arg("--lang")
+        .arg("en")
         .arg("plugin")
         .arg("update")
         .arg("project-theme")
@@ -275,14 +283,18 @@ version = "1.0.0"
         .arg("mm.toml")
         .assert()
         .success();
+    let stdout = String::from_utf8_lossy(&update_assert.get_output().stdout);
+    assert!(stdout.contains("plugin updated"));
 
     let lock = fs::read_to_string(dir.path().join("mm.lock")).unwrap();
     assert!(lock.contains("project-theme"));
 
-    Command::cargo_bin("mm")
+    let remove_assert = Command::cargo_bin("mm")
         .unwrap()
         .current_dir(dir.path())
         .env("XDG_DATA_HOME", &data_home)
+        .arg("--lang")
+        .arg("ja")
         .arg("plugin")
         .arg("remove")
         .arg("project-theme")
@@ -290,6 +302,8 @@ version = "1.0.0"
         .arg("mm.toml")
         .assert()
         .success();
+    let stdout = String::from_utf8_lossy(&remove_assert.get_output().stdout);
+    assert!(stdout.contains("plugin を削除しました"));
 
     let lock = fs::read_to_string(dir.path().join("mm.lock")).unwrap();
     assert!(!lock.contains("project-theme"));
@@ -382,6 +396,28 @@ fn package_command_uses_default_output() {
         .success();
 
     assert!(dir.path().join("output/cli.tar.gz").exists());
+}
+
+#[test]
+fn package_error_outputs_english_with_lang() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project(dir.path());
+    fs::write(dir.path().join("blocked"), "not a directory").unwrap();
+
+    let assert = Command::cargo_bin("mm")
+        .unwrap()
+        .arg("--lang")
+        .arg("en")
+        .arg("package")
+        .arg("--project-root")
+        .arg(dir.path())
+        .arg("--output")
+        .arg(dir.path().join("blocked/project.tar.gz"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(stderr.contains("error: failed to create package output directory"));
 }
 
 fn tar_gz_entries(path: &Path) -> Vec<String> {

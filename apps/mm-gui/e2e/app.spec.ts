@@ -5,7 +5,12 @@ async function useEnglish(page: Page) {
   await page.getByRole("combobox", { name: /^(言語|Language)$/ }).selectOption("en");
 }
 
+async function useJapaneseByDefault(page: Page) {
+  await page.addInitScript(() => localStorage.setItem("mm.locale", "ja"));
+}
+
 test("主要ペインとプレビュー描画を確認できる", async ({ page }) => {
+  await useJapaneseByDefault(page);
   await page.goto("/");
 
   await expect(page.getByText("make-movie")).toBeVisible();
@@ -37,6 +42,7 @@ test("主要ペインとプレビュー描画を確認できる", async ({ page 
 });
 
 test("Languageで日本語と英語を切り替えられる", async ({ page }) => {
+  await useJapaneseByDefault(page);
   await page.goto("/");
 
   await expect(page.getByText("アセット")).toBeVisible();
@@ -79,7 +85,31 @@ test("Languageで日本語と英語を切り替えられる", async ({ page }) =
   );
 });
 
+test("Language選択を保存し次回表示とhtml langに反映できる", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("mm.locale-test-initialized")) {
+      localStorage.removeItem("mm.locale");
+      sessionStorage.setItem("mm.locale-test-initialized", "true");
+    }
+    Object.defineProperty(navigator, "language", { value: "en-US" });
+  });
+  await page.goto("/");
+
+  await expect(page.getByRole("combobox", { name: "Language" })).toHaveValue("en");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await page.getByRole("combobox", { name: "Language" }).selectOption("ja");
+  await expect(page.getByRole("combobox", { name: "言語" })).toHaveValue("ja");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("mm.locale"))).toBe("ja");
+
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "言語" })).toHaveValue("ja");
+  await expect(page.getByText("アセット")).toBeVisible();
+});
+
 test("プレビュー操作とタイムライン選択がUIに反映される", async ({ page }) => {
+  await useJapaneseByDefault(page);
   await page.goto("/");
   await useEnglish(page);
 
@@ -105,6 +135,7 @@ test("プレビュー操作とタイムライン選択がUIに反映される", 
 });
 
 test("プロパティ編集をUndo/Redoできる", async ({ page }) => {
+  await useJapaneseByDefault(page);
   await page.goto("/");
   await useEnglish(page);
 
