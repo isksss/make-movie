@@ -8,9 +8,9 @@ use mm_core::{
     Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
 use skia_safe::{
-    image::CachingHint, images, paint, surfaces, utils::text_utils, AlphaType, BlurStyle, Color,
-    ColorType, Data, Font as SkiaFont, FontMgr, FontStyle, ImageInfo, MaskFilter, Paint,
-    PathBuilder, RRect, Rect,
+    gradient, image::CachingHint, images, paint, surfaces, utils::text_utils, AlphaType, BlurStyle,
+    Color, Color4f, ColorType, Data, Font as SkiaFont, FontMgr, FontStyle, ImageInfo, MaskFilter,
+    Paint, PathBuilder, RRect, Rect, TileMode,
 };
 use std::env;
 use std::fs;
@@ -991,7 +991,7 @@ impl SkiaFrameRenderer {
             }
         }
 
-        let fill_paint = skia_text_paint(color, transform.opacity);
+        let fill_paint = skia_text_fill_paint(text, transform, color);
         self.draw_text_lines(
             canvas,
             text,
@@ -1363,17 +1363,46 @@ fn draw_layer_content(
 }
 
 fn is_skia_native_text_supported(text: &TextLayer, transform: Transform) -> bool {
-    text.font_asset_id.is_none()
-        && text.gradient.is_none()
-        && text.letter_spacing == 0.0
-        && transform.rotation == 0.0
+    text.font_asset_id.is_none() && text.letter_spacing == 0.0 && transform.rotation == 0.0
 }
 
 fn skia_text_paint(color: Rgba<u8>, opacity: f32) -> Paint {
     let mut paint = Paint::default();
-    paint.set_color(Color::from_argb(color[3], color[0], color[1], color[2]));
+    paint.set_color(skia_color(color));
     paint.set_alpha_f((f32::from(color[3]) / 255.0) * opacity.clamp(0.0, 1.0));
     paint
+}
+
+fn skia_text_fill_paint(text: &TextLayer, transform: Transform, fallback: Rgba<u8>) -> Paint {
+    let mut paint = skia_text_paint(fallback, transform.opacity);
+    let Some(gradient) = &text.gradient else {
+        return paint;
+    };
+
+    let start = parse_color(&gradient.start_color).unwrap_or(fallback);
+    let end = parse_color(&gradient.end_color).unwrap_or(fallback);
+    let colors = [
+        Color4f::from(skia_color(start)),
+        Color4f::from(skia_color(end)),
+    ];
+    let x = transform.x;
+    let y = transform.y;
+    let width = transform.width.max(1.0);
+    let height = transform.height.max(text.font_size.max(1.0));
+    let points = match gradient.direction {
+        GradientDirection::Horizontal => ((x, y), (x + width, y)),
+        GradientDirection::Vertical => ((x, y), (x, y + height)),
+    };
+    let colors = gradient::Colors::new_evenly_spaced(&colors, TileMode::Clamp, None);
+    let gradient = gradient::Gradient::new(colors, gradient::Interpolation::default());
+    if let Some(shader) = gradient::shaders::linear_gradient(points, &gradient, None) {
+        paint.set_shader(shader);
+    }
+    paint
+}
+
+fn skia_color(color: Rgba<u8>) -> Color {
+    Color::from_argb(color[3], color[0], color[1], color[2])
 }
 
 fn apply_transition_to_frame(frame: &mut RgbaImage, layer: &Layer, local_time: f64) {
@@ -3028,6 +3057,70 @@ mod tests {
                 .pixels()
                 .any(|pixel| pixel[2] > 150 && pixel[0] < 120 && pixel[1] < 120),
             "shadow の青い pixel がありません"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_draws_text_gradient_with_native_text() -> Result<()> {
+        let mut project = text_project();
+        project.settings.width = 220;
+        project.settings.height = 120;
+        let LayerContent::Text(text) = &mut project.tracks[0].layers[0].content else {
+            panic!("text layer ではありません");
+        };
+        text.text = "Skia".to_string();
+        text.font_size = 44.0;
+        text.color = "#ffffff".to_string();
+        text.align = TextAlign::Left;
+        text.stroke = Some(TextStroke {
+            color: "#ffffff".to_string(),
+            width: 1.0,
+        });
+        text.shadow = Some(TextShadow {
+            color: "#00ff00".to_string(),
+            offset_x: 8.0,
+            offset_y: 10.0,
+            blur: 0.0,
+        });
+        text.gradient = Some(TextGradient {
+            start_color: "#ff0000".to_string(),
+            end_color: "#0000ff".to_string(),
+            direction: GradientDirection::Vertical,
+        });
+        text.font_asset_id = None;
+        text.letter_spacing = 0.0;
+        project.tracks[0].layers[0].transform = Transform {
+            x: 20.0,
+            y: 12.0,
+            width: 170.0,
+            height: 70.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[0] > pixel[2] && pixel[0] > 120),
+            "gradient 開始色寄りの赤い pixel がありません"
+        );
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[2] > pixel[0] && pixel[2] > 80),
+            "gradient 終了色寄りの青い pixel がありません"
+        );
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[1] > 140 && pixel[0] < 120 && pixel[2] < 120),
+            "shadow の緑の pixel がありません"
         );
         Ok(())
     }
