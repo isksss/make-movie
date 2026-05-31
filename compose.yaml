@@ -6,7 +6,7 @@ services:
       args:
         USER_ID: ${UID:-1000}
         GROUP_ID: ${GID:-1000}
-        NODE_MAJOR: ${NODE_MAJOR:-22}
+        NODE_MAJOR: ${NODE_MAJOR:-26}
         PNPM_VERSION: ${PNPM_VERSION:-10.24.0}
     image: make-movie-dev:ubuntu-24.04
     working_dir: /workspace

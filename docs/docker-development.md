@@ -8,7 +8,7 @@ CI とローカル検証の差分を小さくするため、Ubuntu ベースの 
 - Docker Compose
 
 コンテナは `ubuntu:24.04` を固定し、GitHub Actions の `ubuntu-latest` が更新されてもローカル検証が急に変わらないようにします。
-Node.js は現在の CI に合わせて 22 系、pnpm は `10.24.0` を既定にしています。
+Node.js は `.mise.toml` と CI に合わせて 26 系、pnpm は `10.24.0` を既定にしています。
 
 ## 初回ビルド
 
@@ -19,7 +19,7 @@ docker compose build dev
 Node.js の major version を変える場合は build arg を指定します。
 
 ```bash
-NODE_MAJOR=26 docker compose build dev
+NODE_MAJOR=28 docker compose build dev
 ```
 
 ## シェル
