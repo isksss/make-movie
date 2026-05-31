@@ -831,7 +831,20 @@ fn gpu_image_layer(
         return Ok(None);
     };
     if layer.transition.is_some() {
-        return Ok(None);
+        let mut image = RgbaImage::from_pixel(
+            project.settings.width,
+            project.settings.height,
+            Rgba([0, 0, 0, 0]),
+        );
+        draw_layer_content(project, options, &mut image, layer, transform, time)?;
+        apply_transition_to_frame(&mut image, layer, time - layer.start);
+        return Ok(Some(GpuImageLayer {
+            image,
+            x: 0,
+            y: 0,
+            opacity: 1.0,
+            rotation: 0.0,
+        }));
     }
 
     let asset = project
@@ -4032,6 +4045,48 @@ mod tests {
             frame.get_pixel(6, 6)[1] > 200,
             "GPU hybrid mask layer が描画されていません: {:?}",
             frame.get_pixel(6, 6)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_gpu_hybrid_composites_transitioned_image_layer_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let image_path = media.join("red.png");
+        RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255])).save(&image_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 8;
+        project.settings.height = 8;
+        project.assets = vec![Asset {
+            id: "red".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/red.png"),
+        }];
+        let mut layer = image_test_layer("gpu-image", "red", 1, 2.0, 2.0);
+        layer.transform.width = 4.0;
+        layer.transform.height = 4.0;
+        layer.transition = Some(Transition::CrossFade { duration: 1.0 });
+        let transform = resolve_layer_transform(&layer, 0.5);
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let gpu_layer = gpu_image_layer(&project, &options, &layer, transform, 0.5)?
+            .context("transition付き Image layer がGPU layerに変換されていません")?;
+        assert_eq!(gpu_layer.image.dimensions(), (8, 8));
+        project.tracks[0].layers = vec![layer];
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 0.5)?;
+        let pixel = frame.get_pixel(3, 3);
+
+        assert!(
+            (100..180).contains(&pixel[0]) && pixel[1] < 20 && pixel[2] < 20,
+            "GPU hybrid transition layer が半透明赤として描画されていません: {pixel:?}"
         );
         Ok(())
     }
