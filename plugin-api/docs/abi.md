@@ -12,7 +12,24 @@ GUI や CLI は Plugin の内部実装に依存せず、Runtime は WIT で定�
 package mm:plugin;
 
 interface plugin {
-  metadata: func() -> string;
+  enum plugin-category {
+    ai,
+    subtitle,
+    tts,
+    template,
+    export,
+    utility,
+  }
+
+  record plugin-metadata {
+    name: string,
+    version: string,
+    category: plugin-category,
+    display-name: option<string>,
+    description: option<string>,
+  }
+
+  metadata: func() -> plugin-metadata;
   initialize: func();
   shutdown: func();
 }
@@ -26,7 +43,7 @@ interface plugin {
 4. `initialize` を呼び出す。
 5. 終了時に `shutdown` を呼び出す。
 
-`metadata` は Plugin 側の追加メタデータを返すための関数です。Core の必須編集機能は Plugin で置き換えません。
+`metadata` は Plugin 側の追加メタデータを `plugin-metadata` record として返すための関数です。Core の必須編集機能は Plugin で置き換えません。
 
 ## 互換性
 

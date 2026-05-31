@@ -104,7 +104,7 @@ impl std::fmt::Display for MetadataError {
 impl std::error::Error for MetadataError {}
 
 pub trait MmPlugin {
-    fn metadata(&self) -> String;
+    fn metadata(&self) -> PluginMetadata;
 
     fn initialize(&mut self) {}
 
@@ -131,7 +131,9 @@ macro_rules! export_plugin {
         pub extern "C" fn metadata() -> *mut std::ffi::c_char {
             let mut plugin = PLUGIN.lock().expect("plugin lock poisoned");
             let instance = plugin.get_or_insert_with(<$plugin as Default>::default);
-            let metadata = <$plugin as $crate::MmPlugin>::metadata(instance);
+            let metadata = <$plugin as $crate::MmPlugin>::metadata(instance)
+                .to_json()
+                .expect("plugin metadata must be valid");
             std::ffi::CString::new(metadata)
                 .expect("plugin metadata must not contain NUL bytes")
                 .into_raw()
@@ -203,16 +205,14 @@ mod tests {
     struct TestPlugin;
 
     impl MmPlugin for TestPlugin {
-        fn metadata(&self) -> String {
+        fn metadata(&self) -> PluginMetadata {
             PluginMetadata::new("test", "0.1.0", PluginCategory::Utility)
-                .to_json()
-                .unwrap()
         }
     }
 
     #[test]
     fn plugin_returns_metadata() {
-        let metadata = TestPlugin.metadata();
+        let metadata = TestPlugin.metadata().to_json().unwrap();
         assert!(metadata.contains("\"name\":\"test\""));
         validate_metadata_json(&metadata).unwrap();
     }

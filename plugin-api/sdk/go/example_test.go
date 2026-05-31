@@ -4,12 +4,12 @@ import mmsdk "github.com/isksss/make-movie/plugin-api/sdk/go"
 
 type MinimalPlugin struct{}
 
-func (plugin MinimalPlugin) Metadata() string {
-	return mmsdk.MustMetadataJSON(mmsdk.Metadata{
+func (plugin MinimalPlugin) Metadata() mmsdk.Metadata {
+	return mmsdk.Metadata{
 		Name:     "minimal-plugin",
 		Version:  "0.1.0",
 		Category: mmsdk.CategoryUtility,
-	})
+	}
 }
 
 func (plugin MinimalPlugin) Initialize() error {
