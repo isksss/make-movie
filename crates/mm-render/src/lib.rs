@@ -198,6 +198,18 @@ pub fn probe_gpu_backend() -> GpuProbe {
     })
 }
 
+pub fn system_font_families() -> Vec<String> {
+    let mut database = fontdb::Database::new();
+    database.load_system_fonts();
+    let mut families = database
+        .faces()
+        .flat_map(|face| face.families.iter().map(|(family, _)| family.clone()))
+        .collect::<Vec<_>>();
+    families.sort_unstable();
+    families.dedup();
+    families
+}
+
 enum ActiveRenderBackend {
     Cpu,
     Skia(SkiaFrameRenderer),
@@ -966,7 +978,7 @@ impl SkiaFrameRenderer {
         text: &TextLayer,
         transform: Transform,
     ) -> Result<()> {
-        let typeface = skia_default_typeface()?;
+        let typeface = skia_typeface_for_text(text)?;
         let font_size = text.font_size * transform.scale.max(0.01);
         let font = SkiaFont::new(typeface, font_size);
         let color = parse_color(&text.color).unwrap_or(Rgba([255, 255, 255, 255]));
@@ -1405,16 +1417,22 @@ fn draw_layer_content(
             draw_image(frame, &image, transform, content.fit);
         }
         LayerContent::Text(content) => {
-            let font = load_font(project, options, content.font_asset_id.as_deref())?;
+            let font = load_font(
+                project,
+                options,
+                content.font_asset_id.as_deref(),
+                content.font_family.as_deref(),
+            )?;
             draw_text_layer(frame, content, transform, &font);
         }
         LayerContent::Subtitle(content) => {
             if let Some(text) = active_subtitle_text(project, options, content, time - layer.start)?
             {
-                let font = load_font(project, options, None)?;
+                let font = load_font(project, options, None, None)?;
                 let subtitle = TextLayer {
                     text,
                     font_asset_id: None,
+                    font_family: None,
                     font_size: resolved_subtitle_font_size(layer.transform),
                     color: "#ffffff".to_string(),
                     letter_spacing: 0.0,
@@ -2779,6 +2797,7 @@ fn load_font(
     project: &Project,
     options: &RenderOptions,
     font_asset_id: Option<&str>,
+    font_family: Option<&str>,
 ) -> Result<FontArc> {
     let font_path = font_asset_id
         .and_then(|asset_id| {
@@ -2788,6 +2807,7 @@ fn load_font(
                 .find(|asset| asset.id == asset_id && asset.kind == AssetKind::Font)
         })
         .map(|asset| options.project_root.join(&asset.path))
+        .or_else(|| font_family.and_then(system_font_path_by_family))
         .or_else(system_font_path)
         .context("利用可能なフォントが見つかりません")?;
     let bytes = fs::read(&font_path)
@@ -2801,6 +2821,31 @@ fn system_font_path() -> Option<PathBuf> {
         .iter()
         .map(PathBuf::from)
         .find(|path| path.exists())
+}
+
+fn system_font_path_by_family(font_family: &str) -> Option<PathBuf> {
+    let mut database = fontdb::Database::new();
+    database.load_system_fonts();
+    let id = database.query(&fontdb::Query {
+        families: &[fontdb::Family::Name(font_family)],
+        weight: fontdb::Weight::NORMAL,
+        stretch: fontdb::Stretch::Normal,
+        style: fontdb::Style::Normal,
+    })?;
+    let face = database.face(id)?;
+    match &face.source {
+        fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => Some(path.clone()),
+        fontdb::Source::Binary(_) => None,
+    }
+}
+
+fn skia_typeface_for_text(text: &TextLayer) -> Result<Typeface> {
+    if let Some(font_family) = text.font_family.as_deref()
+        && let Some(typeface) = FontMgr::new().match_family_style(font_family, FontStyle::normal())
+    {
+        return Ok(typeface);
+    }
+    skia_default_typeface()
 }
 
 fn skia_default_typeface() -> Result<Typeface> {
@@ -3052,6 +3097,7 @@ mod tests {
                     content: LayerContent::Text(TextLayer {
                         text: "Test\nTitle".to_string(),
                         font_asset_id: None,
+                        font_family: None,
                         font_size: 48.0,
                         color: "#ffffff".to_string(),
                         letter_spacing: 0.0,
@@ -4591,6 +4637,7 @@ mod tests {
                             content: LayerContent::Text(TextLayer {
                                 text: "mm".to_string(),
                                 font_asset_id: None,
+                                font_family: None,
                                 font_size: 18.0,
                                 color: "#ffffff".to_string(),
                                 letter_spacing: 0.0,
