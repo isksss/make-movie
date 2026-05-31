@@ -97,6 +97,7 @@ export interface TimelineLayer {
 
 export interface TextLayerStyle {
   text: string;
+  fontFamily: string;
   fontSize: number;
   color: string;
   letterSpacing: number;
@@ -292,6 +293,7 @@ export function layerAnimation(overrides: Partial<LayerAnimation> = {}): LayerAn
 export function textLayerStyle(overrides: Partial<TextLayerStyle> = {}): TextLayerStyle {
   return {
     text: "",
+    fontFamily: "",
     fontSize: 48,
     color: "#ffffff",
     letterSpacing: 0,

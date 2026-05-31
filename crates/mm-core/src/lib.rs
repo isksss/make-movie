@@ -178,6 +178,8 @@ pub struct TextLayer {
     pub text: String,
     #[serde(default)]
     pub font_asset_id: Option<String>,
+    #[serde(default)]
+    pub font_family: Option<String>,
     #[serde(default = "default_font_size")]
     pub font_size: f32,
     #[serde(default = "default_color")]
@@ -1120,6 +1122,7 @@ mod tests {
                     content: LayerContent::Text(TextLayer {
                         text: "Hello\nmake-movie".to_string(),
                         font_asset_id: None,
+                        font_family: None,
                         font_size: 64.0,
                         color: "#ffffff".to_string(),
                         letter_spacing: 0.0,

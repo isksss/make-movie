@@ -5,6 +5,7 @@ export const commands = {
   loadProject: (path: string) => invoke<string>("load_project", { path }),
   saveProject: (path: string, toml: string) => invoke<void>("save_project", { path, toml }),
   buildProject: (path: string) => invoke<void>("build_project", { path }),
+  listSystemFonts: () => invoke<string[]>("list_system_fonts"),
   importAsset: (projectRoot: string, sourcePath: string, kind: AssetKind) =>
     invoke<string>("import_asset", { projectRoot, sourcePath, kind }),
   importAssetIntoProject: (projectPath: string, sourcePath: string, kind: AssetKind) =>

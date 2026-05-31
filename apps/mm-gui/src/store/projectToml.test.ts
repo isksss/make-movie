@@ -134,6 +134,7 @@ value = 240
           ...initialProject.layers[0],
           text: {
             text: "複数行\nタイトル",
+            fontFamily: "HackGen",
             fontSize: 72,
             color: "#ffcc00",
             letterSpacing: 1.5,
@@ -153,6 +154,7 @@ value = 240
     });
 
     expect(toml).toContain('text = "複数行\\nタイトル"');
+    expect(toml).toContain('font_family = "HackGen"');
     expect(toml).toContain("font_size = 72");
     expect(toml).toContain('color = "#ffcc00"');
     expect(toml).toContain("letter_spacing = 1.5");
@@ -535,6 +537,7 @@ z_index = 10
 [tracks.layers.content]
 type = "text"
 text = "複数行\\nタイトル"
+font_family = "HackGen"
 font_size = 72
 color = "#ffcc00"
 letter_spacing = 1.5
@@ -568,6 +571,7 @@ opacity = 1
 
     expect(parsed.layers[0].text).toMatchObject({
       text: "複数行\nタイトル",
+      fontFamily: "HackGen",
       fontSize: 72,
       color: "#ffcc00",
       letterSpacing: 1.5,
