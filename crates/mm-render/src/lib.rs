@@ -8,8 +8,8 @@ use mm_core::{
     Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
 use skia_safe::{
-    image::CachingHint, images, surfaces, AlphaType, Color, ColorType, Data, ImageInfo, Paint,
-    PathBuilder, RRect, Rect,
+    image::CachingHint, images, surfaces, utils::text_utils, AlphaType, Color, ColorType, Data,
+    Font as SkiaFont, FontMgr, FontStyle, ImageInfo, Paint, PathBuilder, RRect, Rect,
 };
 use std::env;
 use std::fs;
@@ -849,29 +849,44 @@ impl SkiaFrameRenderer {
         transform: Transform,
         time: f64,
     ) -> Result<Option<RgbaImage>> {
-        let LayerContent::Image(content) = &layer.content else {
-            return Ok(None);
-        };
-        if matches!(content.mask, Some(Mask::Svg { .. })) {
-            return Ok(None);
-        }
-        if transform.rotation != 0.0 || content.fit.is_some() {
-            return Ok(None);
-        }
+        match &layer.content {
+            LayerContent::Image(content) => {
+                if matches!(content.mask, Some(Mask::Svg { .. }))
+                    || transform.rotation != 0.0
+                    || content.fit.is_some()
+                {
+                    return Ok(None);
+                }
 
-        let width = project.settings.width;
-        let height = project.settings.height;
-        let mut surface = self.surface(width, height, Rgba([0, 0, 0, 0]))?;
-        self.draw_image_layer(
-            project,
-            options,
-            surface.canvas(),
-            layer,
-            content,
-            transform,
-            time,
-        )?;
-        self.read_surface(&mut surface, width, height).map(Some)
+                let width = project.settings.width;
+                let height = project.settings.height;
+                let mut surface = self.surface(width, height, Rgba([0, 0, 0, 0]))?;
+                self.draw_image_layer(
+                    project,
+                    options,
+                    surface.canvas(),
+                    layer,
+                    content,
+                    transform,
+                    time,
+                )?;
+                self.read_surface(&mut surface, width, height).map(Some)
+            }
+            LayerContent::Text(content) => {
+                if !is_skia_native_text_supported(content, transform) {
+                    return Ok(None);
+                }
+                let width = project.settings.width;
+                let height = project.settings.height;
+                let mut surface = self.surface(width, height, Rgba([0, 0, 0, 0]))?;
+                self.draw_text_layer(surface.canvas(), content, transform)?;
+                self.read_surface(&mut surface, width, height).map(Some)
+            }
+            LayerContent::Video(_)
+            | LayerContent::Audio(_)
+            | LayerContent::Subtitle(_)
+            | LayerContent::Voice(_) => Ok(None),
+        }
     }
 
     fn draw_image_layer(
@@ -911,6 +926,36 @@ impl SkiaFrameRenderer {
         );
         self.draw_rgba_image_at(canvas, &image, x, y, transform.opacity)?;
         canvas.restore();
+        Ok(())
+    }
+
+    fn draw_text_layer(
+        &self,
+        canvas: &skia_safe::Canvas,
+        text: &TextLayer,
+        transform: Transform,
+    ) -> Result<()> {
+        let typeface = FontMgr::new()
+            .legacy_make_typeface(None, FontStyle::normal())
+            .context("Skia default typeface を取得できません")?;
+        let font_size = text.font_size * transform.scale.max(0.01);
+        let font = SkiaFont::new(typeface, font_size);
+        let mut paint = Paint::default();
+        let color = parse_color(&text.color).unwrap_or(Rgba([255, 255, 255, 255]));
+        paint.set_color(Color::from_argb(color[3], color[0], color[1], color[2]));
+        paint.set_alpha_f(transform.opacity.clamp(0.0, 1.0));
+        let line_height = font_size * text.line_spacing.max(0.1);
+        let baseline_y = transform.y + font_size;
+        let align = match text.align {
+            TextAlign::Left => text_utils::Align::Left,
+            TextAlign::Center => text_utils::Align::Center,
+            TextAlign::Right => text_utils::Align::Right,
+        };
+
+        for (line_index, line) in text.text.lines().enumerate() {
+            let y = baseline_y + line_index as f32 * line_height;
+            canvas.draw_str_align(line, (transform.x, y), &font, &paint, align);
+        }
         Ok(())
     }
 
@@ -1251,6 +1296,15 @@ fn draw_layer_content(
         LayerContent::Audio(_) | LayerContent::Voice(_) => {}
     }
     Ok(())
+}
+
+fn is_skia_native_text_supported(text: &TextLayer, transform: Transform) -> bool {
+    text.font_asset_id.is_none()
+        && text.stroke.is_none()
+        && text.shadow.is_none()
+        && text.gradient.is_none()
+        && text.letter_spacing == 0.0
+        && transform.rotation == 0.0
 }
 
 fn apply_transition_to_frame(frame: &mut RgbaImage, layer: &Layer, local_time: f64) {
@@ -2811,6 +2865,41 @@ mod tests {
             assert_eq!(frame.get_pixel(2, 2), &options.background);
             assert_eq!(frame.get_pixel(12, 8), &Rgba([0, 255, 0, 255]));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_draws_simple_text_with_native_text() -> Result<()> {
+        let mut project = text_project();
+        project.settings.width = 180;
+        project.settings.height = 80;
+        let LayerContent::Text(text) = &mut project.tracks[0].layers[0].content else {
+            panic!("text layer ではありません");
+        };
+        text.text = "Skia".to_string();
+        text.font_size = 28.0;
+        text.color = "#00ff00".to_string();
+        text.align = TextAlign::Left;
+        text.stroke = None;
+        text.shadow = None;
+        text.gradient = None;
+        text.font_asset_id = None;
+        text.letter_spacing = 0.0;
+        project.tracks[0].layers[0].transform = Transform {
+            x: 8.0,
+            y: 8.0,
+            width: 120.0,
+            height: 32.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert!(frame.pixels().any(|pixel| pixel[1] > 120 && pixel[3] > 0));
         Ok(())
     }
 
