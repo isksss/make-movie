@@ -137,18 +137,22 @@ fn bundled_ffmpeg_path(bundle_dir: &std::path::Path, project: &mm_core::Project)
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            load_project,
-            save_project,
-            build_project,
+    let builder = tauri::Builder::default().invoke_handler(tauri::generate_handler![
+        load_project,
+        save_project,
+        build_project,
             import_asset,
             import_asset_into_project,
             install_plugin,
             install_configured_plugins,
             update_plugin,
             remove_plugin
-        ])
+        ]);
+
+    #[cfg(feature = "e2e-testing")]
+    let builder = builder.plugin(tauri_plugin_playwright::init());
+
+    builder
         .run(tauri::generate_context!())
         .expect("tauri application error");
 }
