@@ -40,6 +40,12 @@ export type TextAlignKind = "left" | "center" | "right";
 export type TextGradientDirection = "vertical" | "horizontal";
 export type TtsProviderKind = "voicevox" | "aivis_speech" | "coeiro_ink";
 export type AssetMode = "copy" | "link";
+export type RenderBackend = "auto" | "cpu" | "skia" | "gpu";
+
+export interface GpuProbeResult {
+  available: boolean;
+  adapterName: string | null;
+}
 
 export interface ProjectSettings {
   title: string;

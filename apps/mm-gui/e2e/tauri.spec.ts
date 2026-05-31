@@ -99,6 +99,9 @@ test.beforeEach(async ({ page }) => {
         if (cmd === "list_system_fonts") {
           return ["HackGen", "Inter"];
         }
+        if (cmd === "probe_gpu_backend") {
+          return { available: false, adapterName: null };
+        }
         calls.push({ cmd, args });
         if (cmd === "load_project") {
           return [
@@ -231,7 +234,7 @@ test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {
         toml: expect.stringContaining('id = "import-layer"'),
       }),
     },
-    { cmd: "build_project", args: { path: "mm.toml" } },
+    { cmd: "build_project_with_backend", args: { path: "mm.toml", backend: "auto" } },
   ]);
   expect(calls[1].args.toml).toEqual(expect.stringContaining("[[tracks.layers]]"));
   expect(calls[1].args.toml).toEqual(expect.stringContaining('label = "Hero Layer"'));

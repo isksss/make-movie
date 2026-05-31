@@ -1,6 +1,7 @@
 import {
   Box,
   Copy,
+  Cpu,
   Download,
   FolderOpen,
   Import,
@@ -25,7 +26,14 @@ import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
-import type { AssetKind, PluginDeclaration, ProjectState, TtsProviderKind } from "../types";
+import type {
+  AssetKind,
+  GpuProbeResult,
+  PluginDeclaration,
+  ProjectState,
+  RenderBackend,
+  TtsProviderKind,
+} from "../types";
 import { initialLocale, localeStorageKey, messages, optionLabels } from "./i18n";
 import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
@@ -76,6 +84,7 @@ const easingOptions = [
   "elastic",
 ] as const;
 const ttsProviderOptions = ["voicevox", "aivis_speech", "coeiro_ink"] as const;
+const renderBackendOptions = ["auto", "cpu", "skia", "gpu"] as const;
 
 export function App() {
   const defaultLocale = initialLocale();
@@ -111,6 +120,8 @@ export function App() {
   const labels = optionLabels[locale];
   const [commandStatus, setCommandStatus] = useState<string>(messages[defaultLocale].ready);
   const [fontFamilies, setFontFamilies] = useState<string[]>([]);
+  const [renderBackend, setRenderBackend] = useState<RenderBackend>("auto");
+  const [gpuProbe, setGpuProbe] = useState<GpuProbeResult | null>(null);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -121,6 +132,12 @@ export function App() {
       .listSystemFonts()
       .then((fonts) => setFontFamilies(Array.isArray(fonts) ? fonts : []))
       .catch(() => setFontFamilies([]));
+  }, []);
+  useEffect(() => {
+    void commands
+      .probeGpuBackend()
+      .then((probe) => setGpuProbe(probe))
+      .catch(() => setGpuProbe({ available: false, adapterName: null }));
   }, []);
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
@@ -189,7 +206,12 @@ export function App() {
             <Import size={18} />
           </button>
           <button
-            onClick={() => runCommand(() => commands.buildProject(defaultProjectPath), t.built)}
+            onClick={() =>
+              runCommand(
+                () => commands.buildProjectWithBackend(defaultProjectPath, renderBackend),
+                t.built,
+              )
+            }
             title={t.buildMovie}
           >
             <Wand2 size={18} />
@@ -204,6 +226,25 @@ export function App() {
         <div aria-live="polite" className="command-status">
           {commandStatus}
         </div>
+        <label className="render-backend-select">
+          <Cpu size={16} />
+          {t.renderBackend}
+          <select
+            aria-label={t.renderBackend}
+            onChange={(event) => setRenderBackend(event.target.value as RenderBackend)}
+            value={renderBackend}
+          >
+            {renderBackendOptions.map((backend) => (
+              <option key={backend} value={backend}>
+                {labels.renderBackend[backend]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className={gpuProbe?.available ? "gpu-status available" : "gpu-status"}>
+          {gpuProbe?.available ? t.gpuAvailable : t.gpuUnavailable}
+          {gpuProbe?.adapterName ? `: ${gpuProbe.adapterName}` : ""}
+        </span>
         <label className="language-select">
           {t.language}
           <select
@@ -299,6 +340,22 @@ export function App() {
               <option value={1.5}>1.5x</option>
               <option value={2}>2x</option>
             </select>
+            <button
+              onClick={() =>
+                runCommand(
+                  () =>
+                    commands.renderPreviewFrame(
+                      defaultProjectPath,
+                      preview.currentTime,
+                      renderBackend,
+                    ),
+                  t.previewRendered,
+                )
+              }
+              title={t.renderPreviewFrame}
+            >
+              <Wand2 size={18} />
+            </button>
           </div>
         </section>
 
