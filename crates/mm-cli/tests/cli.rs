@@ -11,6 +11,52 @@ fn doctor_command_succeeds() {
 }
 
 #[test]
+fn doctor_command_prefers_project_ffmpeg_setting() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project_with_ffmpeg(dir.path(), "/opt/mm/bin/ffmpeg");
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("doctor")
+        .arg("--project")
+        .arg(dir.path().join("mm.toml"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("ffmpeg: /opt/mm/bin/ffmpeg"));
+}
+
+#[test]
+fn doctor_help_outputs_project_option_in_japanese_and_english() {
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("ja")
+        .arg("doctor")
+        .arg("--help")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("使用方法: mm doctor"));
+    assert!(stdout.contains("--project <PROJECT>"));
+    assert!(stdout.contains("project toml のパス"));
+
+    let mut command = Command::cargo_bin("mm").unwrap();
+    let assert = command
+        .arg("--lang")
+        .arg("en")
+        .arg("doctor")
+        .arg("--help")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(stdout.contains("Usage: mm doctor"));
+    assert!(stdout.contains("--project <PROJECT>"));
+    assert!(stdout.contains("Path to project toml"));
+}
+
+#[test]
 fn validate_command_accepts_valid_project() {
     let dir = tempfile::tempdir().unwrap();
     write_valid_project(dir.path());
@@ -447,12 +493,24 @@ fn tar_gz_entries(path: &Path) -> Vec<String> {
 }
 
 fn write_valid_project(root: &Path) {
+    write_project(root, None);
+}
+
+fn write_valid_project_with_ffmpeg(root: &Path, ffmpeg: &str) {
+    write_project(root, Some(ffmpeg));
+}
+
+fn write_project(root: &Path, ffmpeg: Option<&str>) {
     let media = root.join("media/image");
     fs::create_dir_all(&media).unwrap();
     fs::write(media.join("sample.png"), []).unwrap();
+    let ffmpeg_line = ffmpeg
+        .map(|path| format!("ffmpeg = \"{path}\"\n"))
+        .unwrap_or_default();
     fs::write(
         root.join("mm.toml"),
-        r##"
+        format!(
+            r##"
 [settings]
 title = "CLI テスト"
 width = 320
@@ -462,6 +520,7 @@ sample_rate = 48000
 duration = 1.0
 output = "output/movie.mp4"
 asset_mode = "copy"
+{ffmpeg_line}
 
 [[assets]]
 id = "sample"
@@ -494,7 +553,8 @@ height = 48.0
 scale = 1.0
 rotation = 0.0
 opacity = 1.0
-"##,
+"##
+        ),
     )
     .unwrap();
 }
