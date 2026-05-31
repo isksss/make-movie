@@ -12,6 +12,7 @@
 - Core 機能は Plugin で置き換えない。
 - Plugin は追加機能専用とする。
 - 変更は Issue 単位で行う。
+- PRを3本作成するごとにopen Issueを再確認し、外部追加Issueを作業キューへ反映する。
 - ユーザー指示なしに secret、deploy、package publish、force push を行わない。
 - `PLAN.local.md` と `codingplan.local.md` はローカル下書きとして扱い、通常は変更しない。
 
