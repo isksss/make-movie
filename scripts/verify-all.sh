@@ -38,6 +38,11 @@ run_in "$root/plugin-api/sdk/go" go test ./...
 run corepack pnpm --dir "$root/plugin-api/sdk/ts" install --silent
 run corepack pnpm --dir "$root/plugin-api/sdk/ts" test
 
+run cargo test --manifest-path "$root/plugin-api/templates/rust-basic/Cargo.toml"
+run_in "$root/plugin-api/templates/go-basic" go test ./...
+run corepack pnpm --dir "$root/plugin-api/templates/ts-basic" install --silent
+run corepack pnpm --dir "$root/plugin-api/templates/ts-basic" test
+
 if command -v dotnet >/dev/null 2>&1; then
   run dotnet build "$root/plugin-api/sdk/csharp/mm-sdk-csharp.csproj"
 else
