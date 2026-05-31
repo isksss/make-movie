@@ -6,12 +6,10 @@ struct RustBasicPlugin {
 }
 
 impl MmPlugin for RustBasicPlugin {
-    fn metadata(&self) -> String {
+    fn metadata(&self) -> PluginMetadata {
         PluginMetadata::new("rust-basic", "0.1.0", PluginCategory::Utility)
             .display_name("Rust Basic")
             .description("Rust plugin template")
-            .to_json()
-            .expect("metadata must be valid")
     }
 
     fn initialize(&mut self) {
@@ -34,7 +32,7 @@ mod tests {
     fn metadata_is_valid() {
         let plugin = RustBasicPlugin::default();
 
-        validate_metadata_json(&plugin.metadata()).unwrap();
+        validate_metadata_json(&plugin.metadata().to_json().unwrap()).unwrap();
     }
 
     #[test]

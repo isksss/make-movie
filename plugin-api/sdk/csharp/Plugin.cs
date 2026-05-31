@@ -5,7 +5,7 @@ namespace Mm.Sdk;
 /// </summary>
 public interface IMmPlugin
 {
-    string Metadata();
+    PluginMetadata Metadata();
 
     void Initialize()
     {
@@ -16,7 +16,24 @@ public interface IMmPlugin
     }
 }
 
+public enum PluginCategory
+{
+    Ai,
+    Subtitle,
+    Tts,
+    Template,
+    Export,
+    Utility,
+}
+
+public sealed record PluginMetadata(
+    string Name,
+    string Version,
+    PluginCategory Category,
+    string? DisplayName = null,
+    string? Description = null);
+
 public sealed class NoopPlugin : IMmPlugin
 {
-    public string Metadata() => "{}";
+    public PluginMetadata Metadata() => new("noop-plugin", "0.1.0", PluginCategory.Utility);
 }

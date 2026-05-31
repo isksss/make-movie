@@ -5,7 +5,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use wasmtime::component::{
-    Component, Instance as ComponentInstance, Linker as ComponentLinker, ResourceTable,
+    Component, ComponentType, Instance as ComponentInstance, Lift, Linker as ComponentLinker,
+    ResourceTable,
 };
 use wasmtime::{Engine, Instance, Linker, Module, Store};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
@@ -39,15 +40,42 @@ pub struct PluginMetadata {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ComponentType, Lift)]
+#[component(enum)]
+#[repr(u8)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginCategory {
+    #[component(name = "ai")]
     Ai,
+    #[component(name = "subtitle")]
     Subtitle,
+    #[component(name = "tts")]
     Tts,
+    #[component(name = "template")]
     Template,
+    #[component(name = "export")]
     Export,
+    #[component(name = "utility")]
     Utility,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ComponentType, Lift)]
+#[component(record)]
+struct AbiPluginMetadata {
+    name: String,
+    version: String,
+    category: PluginCategory,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[component(name = "display-name")]
+    display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+impl AbiPluginMetadata {
+    fn into_json(self) -> Result<String> {
+        serde_json::to_string(&self).context("plugin metadata をJSONへ変換できません")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,7 +399,7 @@ impl ComponentPluginInstance {
     fn metadata(&mut self) -> Result<Option<String>> {
         let Ok(function) = self
             .instance
-            .get_typed_func::<(), (String,)>(&mut self.store, "metadata")
+            .get_typed_func::<(), (AbiPluginMetadata,)>(&mut self.store, "metadata")
         else {
             return Ok(None);
         };
@@ -380,7 +408,8 @@ impl ComponentPluginInstance {
             .map_err(|error| {
                 anyhow!("plugin component export 'metadata' の実行に失敗しました ({error})")
             })?
-            .0;
+            .0
+            .into_json()?;
         Ok(Some(metadata))
     }
 
@@ -1147,19 +1176,34 @@ component = "theme.wasm"
             wat::parse_str(
                 r#"
                 (component
+                    (type $plugin-category-raw (enum "ai" "subtitle" "tts" "template" "export" "utility"))
+                    (export $plugin-category "plugin-category" (type $plugin-category-raw))
+                    (type $plugin-metadata-raw (record
+                        (field "name" string)
+                        (field "version" string)
+                        (field "category" $plugin-category)
+                        (field "display-name" (option string))
+                        (field "description" (option string))))
+                    (export $plugin-metadata "plugin-metadata" (type $plugin-metadata-raw))
+                    (type $metadata (func (result $plugin-metadata)))
                     (core module $plugin
                         (memory (export "memory") 1)
-                        (data (i32.const 0) "\08\00\00\00\14\00\00\00")
-                        (data (i32.const 8) "{\"name\":\"component\"}")
+                        (data (i32.const 0) "\40\00\00\00\09\00\00\00\50\00\00\00\05\00\00\00\05")
+                        (data (i32.const 64) "component")
+                        (data (i32.const 80) "0.1.0")
                         (func (export "metadata") (result i32)
                             i32.const 0)
+                        (func (export "cabi_post_metadata") (param i32))
                         (func (export "initialize"))
                         (func (export "shutdown"))
                     )
                     (core instance $instance (instantiate $plugin))
-                    (func (export "metadata") (result string)
+                    (alias core export $instance "cabi_post_metadata" (core func $post_metadata))
+                    (func (export "metadata") (type $metadata)
                         (canon lift (core func $instance "metadata")
-                            (memory $instance "memory")))
+                            (memory $instance "memory")
+                            (post-return $post_metadata)
+                            string-encoding=utf8))
                     (func (export "initialize") (canon lift (core func $instance "initialize")))
                     (func (export "shutdown") (canon lift (core func $instance "shutdown")))
                 )
@@ -1171,7 +1215,7 @@ component = "theme.wasm"
         runtime.load(manifest(), &component)?;
         assert_eq!(
             runtime.loaded_plugins()[0].abi_metadata.as_deref(),
-            Some(r#"{"name":"component"}"#)
+            Some(r#"{"name":"component","version":"0.1.0","category":"utility"}"#)
         );
         runtime.initialize_all()?;
         assert!(runtime.loaded_plugins()[0].initialized);
@@ -1190,21 +1234,36 @@ component = "theme.wasm"
             wat::parse_str(
                 r#"
                 (component
+                    (type $plugin-category-raw (enum "ai" "subtitle" "tts" "template" "export" "utility"))
+                    (export $plugin-category "plugin-category" (type $plugin-category-raw))
+                    (type $plugin-metadata-raw (record
+                        (field "name" string)
+                        (field "version" string)
+                        (field "category" $plugin-category)
+                        (field "display-name" (option string))
+                        (field "description" (option string))))
+                    (export $plugin-metadata "plugin-metadata" (type $plugin-metadata-raw))
+                    (type $metadata (func (result $plugin-metadata)))
                     (import "wasi:random/random@0.2.6" (instance $random
                         (export "get-random-u64" (func (result u64)))
                         (export "get-random-bytes" (func (param "len" u64) (result (list u8))))
                     ))
                     (core module $plugin
                         (memory (export "memory") 1)
-                        (data (i32.const 0) "\08\00\00\00\0d\00\00\00")
-                        (data (i32.const 8) "{\"wasi\":\"p2\"}")
+                        (data (i32.const 0) "\40\00\00\00\0b\00\00\00\50\00\00\00\05\00\00\00\05")
+                        (data (i32.const 64) "wasi-plugin")
+                        (data (i32.const 80) "0.1.0")
                         (func (export "metadata") (result i32)
                             i32.const 0)
+                        (func (export "cabi_post_metadata") (param i32))
                     )
                     (core instance $instance (instantiate $plugin))
-                    (func (export "metadata") (result string)
+                    (alias core export $instance "cabi_post_metadata" (core func $post_metadata))
+                    (func (export "metadata") (type $metadata)
                         (canon lift (core func $instance "metadata")
-                            (memory $instance "memory")))
+                            (memory $instance "memory")
+                            (post-return $post_metadata)
+                            string-encoding=utf8))
                 )
                 "#,
             )?,
@@ -1214,7 +1273,7 @@ component = "theme.wasm"
         runtime.load(manifest(), &component)?;
         assert_eq!(
             runtime.loaded_plugins()[0].abi_metadata.as_deref(),
-            Some(r#"{"wasi":"p2"}"#)
+            Some(r#"{"name":"wasi-plugin","version":"0.1.0","category":"utility"}"#)
         );
         Ok(())
     }

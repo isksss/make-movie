@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { commands } from "../services/tauri";
+import { commands, dialogs } from "../services/tauri";
 import { applyExternalAnalysisJson, sampleExternalAnalysisJson } from "../store/externalAnalysis";
 import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
@@ -39,8 +39,6 @@ import { initialLocale, localeStorageKey, messages, optionLabels } from "./i18n"
 import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
 
-const defaultProjectPath = "mm.toml";
-const defaultImportPath = "media/image/import.png";
 const fallbackPlugins = ["VOICEVOX", "AivisSpeech", "Template Pack"] as const;
 const textAlignOptions = ["left", "center", "right"] as const;
 const gradientDirectionOptions = ["vertical", "horizontal"] as const;
@@ -126,6 +124,7 @@ export function App() {
   );
   const [renderBackend, setRenderBackend] = useState<RenderBackend>("auto");
   const [gpuProbe, setGpuProbe] = useState<GpuProbeResult | null>(null);
+  const [projectPath, setProjectPath] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -169,55 +168,72 @@ export function App() {
       setCommandStatus(error instanceof Error ? error.message : String(error));
     }
   };
-  const importAssetFromPath = (sourcePath: string) =>
+  const chooseSaveProjectPath = async () => {
+    const selected = await dialogs.saveProject();
+    if (!selected) {
+      throw new Error(t.dialogCanceled);
+    }
+    setProjectPath(selected);
+    return selected;
+  };
+  const currentProjectPath = async () => projectPath ?? chooseSaveProjectPath();
+  const openProjectFromDialog = () =>
     runCommand(async () => {
+      const selected = await dialogs.openProject();
+      if (!selected) {
+        throw new Error(t.dialogCanceled);
+      }
+      const toml = await commands.loadProject(selected);
+      setProjectPath(selected);
+      setProject(parseProjectToml(toml, project));
+    }, t.opened);
+  const saveProjectToCurrentPath = () =>
+    runCommand(async () => {
+      const path = await currentProjectPath();
+      await commands.saveProject(path, serializeProjectToToml(project));
+    }, t.saved);
+  const importAssetFromDialog = () =>
+    runCommand(async () => {
+      const path = await currentProjectPath();
+      const sourcePath = await dialogs.openAsset();
+      if (!sourcePath) {
+        throw new Error(t.dialogCanceled);
+      }
       const toml = await commands.importAssetIntoProject(
-        defaultProjectPath,
+        path,
         sourcePath,
         inferAssetKind(sourcePath),
       );
       setProject(parseProjectToml(toml, project));
     }, t.imported);
+  const buildProjectFromCurrentPath = () =>
+    runCommand(async () => {
+      const path = await currentProjectPath();
+      await commands.saveProject(path, serializeProjectToToml(project));
+      await commands.buildProjectWithBackend(path, renderBackend);
+    }, t.built);
+  const renderPreviewFromCurrentPath = () =>
+    runCommand(async () => {
+      const path = await currentProjectPath();
+      await commands.saveProject(path, serializeProjectToToml(project));
+      await commands.renderPreviewFrame(path, preview.currentTime, renderBackend);
+    }, t.previewRendered);
 
   return (
     <div className="app-shell">
       <header className="menu-bar">
         <div className="brand">make-movie</div>
         <div className="toolbar" aria-label={t.projectToolbar}>
-          <button
-            onClick={() =>
-              runCommand(async () => {
-                const toml = await commands.loadProject(defaultProjectPath);
-                setProject(parseProjectToml(toml, project));
-              }, t.opened)
-            }
-            title={t.openProject}
-          >
+          <button onClick={openProjectFromDialog} title={t.openProject}>
             <FolderOpen size={18} />
           </button>
-          <button
-            onClick={() =>
-              runCommand(
-                () => commands.saveProject(defaultProjectPath, serializeProjectToToml(project)),
-                t.saved,
-              )
-            }
-            title={t.saveProject}
-          >
+          <button onClick={saveProjectToCurrentPath} title={t.saveProject}>
             <Save size={18} />
           </button>
-          <button onClick={() => importAssetFromPath(defaultImportPath)} title={t.importAsset}>
+          <button onClick={importAssetFromDialog} title={t.importAsset}>
             <Import size={18} />
           </button>
-          <button
-            onClick={() =>
-              runCommand(
-                () => commands.buildProjectWithBackend(defaultProjectPath, renderBackend),
-                t.built,
-              )
-            }
-            title={t.buildMovie}
-          >
+          <button onClick={buildProjectFromCurrentPath} title={t.buildMovie}>
             <Wand2 size={18} />
           </button>
           <button disabled={!canUndo} onClick={undo} title={t.undo}>
@@ -275,7 +291,15 @@ export function App() {
             event.preventDefault();
             const sourcePath = droppedSourcePath(event.dataTransfer);
             if (sourcePath) {
-              void importAssetFromPath(sourcePath);
+              void runCommand(async () => {
+                const path = await currentProjectPath();
+                const toml = await commands.importAssetIntoProject(
+                  path,
+                  sourcePath,
+                  inferAssetKind(sourcePath),
+                );
+                setProject(parseProjectToml(toml, project));
+              }, t.imported);
             }
           }}
         >
@@ -344,20 +368,7 @@ export function App() {
               <option value={1.5}>1.5x</option>
               <option value={2}>2x</option>
             </select>
-            <button
-              onClick={() =>
-                runCommand(
-                  () =>
-                    commands.renderPreviewFrame(
-                      defaultProjectPath,
-                      preview.currentTime,
-                      renderBackend,
-                    ),
-                  t.previewRendered,
-                )
-              }
-              title={t.renderPreviewFrame}
-            >
+            <button onClick={renderPreviewFromCurrentPath} title={t.renderPreviewFrame}>
               <Wand2 size={18} />
             </button>
           </div>
@@ -1413,10 +1424,11 @@ export function App() {
             <button
               aria-label={t.installConfiguredPlugins}
               onClick={() =>
-                runCommand(
-                  () => commands.installConfiguredPlugins(defaultProjectPath),
-                  t.configuredPluginsInstalled,
-                )
+                runCommand(async () => {
+                  const path = await currentProjectPath();
+                  await commands.saveProject(path, serializeProjectToToml(project));
+                  await commands.installConfiguredPlugins(path);
+                }, t.configuredPluginsInstalled)
               }
               title={t.installConfiguredPlugins}
             >

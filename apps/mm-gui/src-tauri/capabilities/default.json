@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "メインウィンドウで通常IPCとE2Eテスト用IPCを許可する。",
   "windows": ["main"],
-  "permissions": ["core:default", "playwright:default"]
+  "permissions": ["core:default", "dialog:default", "playwright:default"]
 }

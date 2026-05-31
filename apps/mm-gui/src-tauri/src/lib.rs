@@ -226,22 +226,24 @@ fn parse_render_backend(value: &str) -> anyhow::Result<RenderBackend> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().invoke_handler(tauri::generate_handler![
-        load_project,
-        save_project,
-        build_project,
-        build_project_with_backend,
-        render_preview_frame,
-        probe_gpu_backend,
-        list_system_fonts,
-        import_asset,
-        import_asset_into_project,
-        apply_external_analysis_result,
-        install_plugin,
-        install_configured_plugins,
-        update_plugin,
-        remove_plugin
-    ]);
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            load_project,
+            save_project,
+            build_project,
+            build_project_with_backend,
+            render_preview_frame,
+            probe_gpu_backend,
+            list_system_fonts,
+            import_asset,
+            import_asset_into_project,
+            apply_external_analysis_result,
+            install_plugin,
+            install_configured_plugins,
+            update_plugin,
+            remove_plugin
+        ]);
 
     #[cfg(feature = "e2e-testing")]
     let builder = builder.plugin(tauri_plugin_playwright::init());

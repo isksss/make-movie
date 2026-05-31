@@ -17,7 +17,7 @@ export interface PluginMetadata {
 }
 
 export interface MmPlugin {
-  metadata(): string;
+  metadata(): PluginMetadata;
   initialize(): void | Promise<void>;
   shutdown(): void | Promise<void>;
 }
@@ -59,12 +59,11 @@ export function validateMetadata(metadata: PluginMetadata): void {
 }
 
 export const noopPlugin: MmPlugin = definePlugin({
-  metadata: () =>
-    metadataToJson({
-      name: "noop-plugin",
-      version: "0.1.0",
-      category: "utility",
-    }),
+  metadata: () => ({
+    name: "noop-plugin",
+    version: "0.1.0",
+    category: "utility",
+  }),
   initialize: () => undefined,
   shutdown: () => undefined,
 });
