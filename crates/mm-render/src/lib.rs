@@ -790,7 +790,75 @@ fn render_frame_gpu_hybrid_with_renderer(
         project.settings.height,
         options.background,
     )?;
-    render_frame_on_base(project, options, time, frame, true)
+    render_frame_gpu_hybrid_on_base(project, options, time, frame, renderer)
+}
+
+fn render_frame_gpu_hybrid_on_base(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+    mut frame: RgbaImage,
+    renderer: &GpuFrameRenderer,
+) -> Result<RgbaImage> {
+    let mut layers = project
+        .tracks
+        .iter()
+        .flat_map(|track| track.layers.iter())
+        .filter(|layer| layer.start <= time && time < layer.start + layer.duration)
+        .collect::<Vec<_>>();
+    layers.sort_by_key(|layer| layer.z_index);
+
+    for layer in layers {
+        let local_time = time - layer.start;
+        let transform = resolve_layer_transform(layer, local_time);
+        if let Some(gpu_layer) = gpu_image_layer(project, options, layer, transform, time)? {
+            frame = renderer.composite_image_layers(frame, &[gpu_layer])?;
+        } else {
+            draw_layer(project, options, &mut frame, layer, transform, time)?;
+        }
+    }
+    Ok(frame)
+}
+
+fn gpu_image_layer(
+    project: &Project,
+    options: &RenderOptions,
+    layer: &Layer,
+    transform: Transform,
+    time: f64,
+) -> Result<Option<GpuImageLayer>> {
+    let LayerContent::Image(content) = &layer.content else {
+        return Ok(None);
+    };
+    if content.mask.is_some()
+        || content.fit.is_some()
+        || transform.rotation != 0.0
+        || layer.transition.is_some()
+    {
+        return Ok(None);
+    }
+
+    let asset = project
+        .assets
+        .iter()
+        .find(|asset| asset.id == content.asset_id)
+        .with_context(|| format!("画像 asset が見つかりません: {}", content.asset_id))?;
+    let path = options.project_root.join(&asset.path);
+    let image = image::open(&path)
+        .with_context(|| format!("画像を読み込めません: {}", path.display()))?
+        .to_rgba8();
+    let image = apply_crop(
+        image,
+        resolve_layer_crop(layer, content.crop, time - layer.start),
+    );
+    let image = apply_image_effects(image, &layer.effects);
+    let (image, x, y) = prepare_image_for_transform(&image, transform, content.fit);
+    Ok(Some(GpuImageLayer {
+        image,
+        x,
+        y,
+        opacity: transform.opacity,
+    }))
 }
 
 fn render_frame_on_base(
@@ -1310,6 +1378,13 @@ pub struct GpuFrameRenderer {
     queue: wgpu::Queue,
 }
 
+struct GpuImageLayer {
+    image: RgbaImage,
+    x: i32,
+    y: i32,
+    opacity: f32,
+}
+
 impl GpuFrameRenderer {
     pub fn new() -> Result<Self> {
         pollster::block_on(Self::new_async())
@@ -1443,6 +1518,418 @@ impl GpuFrameRenderer {
         RgbaImage::from_raw(width, height, pixels)
             .context("GPU frame を RgbaImage に変換できません")
     }
+
+    fn composite_image_layers(
+        &self,
+        base: RgbaImage,
+        layers: &[GpuImageLayer],
+    ) -> Result<RgbaImage> {
+        if base.width() == 0 || base.height() == 0 {
+            bail!("GPU frame size は 1px 以上である必要があります");
+        }
+
+        let texture_size = wgpu::Extent3d {
+            width: base.width(),
+            height: base.height(),
+            depth_or_array_layers: 1,
+        };
+        let target_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("mm gpu composite target"),
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let target_view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("mm gpu image bind group layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mm gpu image pipeline layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("mm gpu image shader"),
+                source: wgpu::ShaderSource::Wgsl(GPU_IMAGE_SHADER.into()),
+            });
+        let pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("mm gpu image pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: GPU_IMAGE_VERTEX_STRIDE,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x2,
+                                offset: 0,
+                                shader_location: 0,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x2,
+                                offset: 8,
+                                shader_location: 1,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32,
+                                offset: 16,
+                                shader_location: 2,
+                            },
+                        ],
+                    }],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("mm gpu image sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("mm gpu composite encoder"),
+            });
+        let mut draw_layers = vec![GpuImageLayerRef {
+            image: &base,
+            x: 0,
+            y: 0,
+            opacity: 1.0,
+        }];
+        draw_layers.extend(layers.iter().map(|layer| GpuImageLayerRef {
+            image: &layer.image,
+            x: layer.x,
+            y: layer.y,
+            opacity: layer.opacity,
+        }));
+        let mut draw_resources = Vec::with_capacity(draw_layers.len());
+        for layer in draw_layers {
+            let (texture, upload_buffer) = self.upload_rgba_texture(&mut encoder, layer.image)?;
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("mm gpu image bind group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+            let vertex_bytes = gpu_image_vertices(
+                base.width(),
+                base.height(),
+                layer.image.width(),
+                layer.image.height(),
+                layer.x,
+                layer.y,
+                layer.opacity,
+            );
+            let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("mm gpu image vertex buffer"),
+                size: vertex_bytes.len() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(&vertex_buffer, 0, &vertex_bytes);
+            draw_resources.push(GpuDrawResource {
+                _texture: texture,
+                _upload_buffer: upload_buffer,
+                _view: view,
+                bind_group,
+                vertex_buffer,
+            });
+        }
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("mm gpu image composite pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            render_pass.set_pipeline(&pipeline);
+            for resource in &draw_resources {
+                render_pass.set_bind_group(0, &resource.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, resource.vertex_buffer.slice(..));
+                render_pass.draw(0..6, 0..1);
+            }
+        }
+        self.read_texture_to_image(encoder, &target_texture, base.width(), base.height())
+    }
+
+    fn upload_rgba_texture(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        image: &RgbaImage,
+    ) -> Result<(wgpu::Texture, wgpu::Buffer)> {
+        if image.width() == 0 || image.height() == 0 {
+            bail!("GPU image texture size は 1px 以上である必要があります");
+        }
+        let unpadded_bytes_per_row = image.width() * 4;
+        let padded_bytes_per_row = align_to(unpadded_bytes_per_row, GPU_COPY_ALIGNMENT);
+        let mut padded =
+            vec![0; (u64::from(padded_bytes_per_row) * u64::from(image.height())) as usize];
+        for row in 0..image.height() as usize {
+            let source_offset = row * unpadded_bytes_per_row as usize;
+            let target_offset = row * padded_bytes_per_row as usize;
+            padded[target_offset..target_offset + unpadded_bytes_per_row as usize].copy_from_slice(
+                &image.as_raw()[source_offset..source_offset + unpadded_bytes_per_row as usize],
+            );
+        }
+        let upload_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mm gpu image upload buffer"),
+            size: padded.len() as u64,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&upload_buffer, 0, &padded);
+        let texture_size = wgpu::Extent3d {
+            width: image.width(),
+            height: image.height(),
+            depth_or_array_layers: 1,
+        };
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("mm gpu image texture"),
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        encoder.copy_buffer_to_texture(
+            wgpu::TexelCopyBufferInfo {
+                buffer: &upload_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(image.height()),
+                },
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            texture_size,
+        );
+        Ok((texture, upload_buffer))
+    }
+
+    fn read_texture_to_image(
+        &self,
+        mut encoder: wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<RgbaImage> {
+        let unpadded_bytes_per_row = width * 4;
+        let padded_bytes_per_row = align_to(unpadded_bytes_per_row, GPU_COPY_ALIGNMENT);
+        let output_buffer_size = u64::from(padded_bytes_per_row) * u64::from(height);
+        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mm gpu readback buffer"),
+            size: output_buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &output_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = output_buffer.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait)
+            .context("GPU readback の完了待機に失敗しました")?;
+        receiver
+            .recv()
+            .context("GPU readback callback を受信できません")?
+            .context("GPU readback buffer を map できません")?;
+
+        let mapped = buffer_slice.get_mapped_range();
+        let mut pixels = vec![0; (u64::from(width) * u64::from(height) * 4) as usize];
+        for row in 0..height as usize {
+            let source_offset = row * padded_bytes_per_row as usize;
+            let target_offset = row * unpadded_bytes_per_row as usize;
+            pixels[target_offset..target_offset + unpadded_bytes_per_row as usize].copy_from_slice(
+                &mapped[source_offset..source_offset + unpadded_bytes_per_row as usize],
+            );
+        }
+        drop(mapped);
+        output_buffer.unmap();
+
+        RgbaImage::from_raw(width, height, pixels)
+            .context("GPU frame を RgbaImage に変換できません")
+    }
+}
+
+struct GpuImageLayerRef<'a> {
+    image: &'a RgbaImage,
+    x: i32,
+    y: i32,
+    opacity: f32,
+}
+
+struct GpuDrawResource {
+    _texture: wgpu::Texture,
+    _upload_buffer: wgpu::Buffer,
+    _view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+}
+
+const GPU_IMAGE_VERTEX_STRIDE: wgpu::BufferAddress = 20;
+const GPU_IMAGE_SHADER: &str = r#"
+struct VertexInput {
+    @location(0) position: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) opacity: f32,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) opacity: f32,
+};
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+    var output: VertexOutput;
+    output.position = vec4<f32>(input.position, 0.0, 1.0);
+    output.uv = input.uv;
+    output.opacity = input.opacity;
+    return output;
+}
+
+@group(0) @binding(0) var image_texture: texture_2d<f32>;
+@group(0) @binding(1) var image_sampler: sampler;
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    let color = textureSample(image_texture, image_sampler, input.uv);
+    return vec4<f32>(color.rgb, color.a * input.opacity);
+}
+"#;
+
+fn gpu_image_vertices(
+    frame_width: u32,
+    frame_height: u32,
+    image_width: u32,
+    image_height: u32,
+    x: i32,
+    y: i32,
+    opacity: f32,
+) -> Vec<u8> {
+    let left = x as f32 / frame_width as f32 * 2.0 - 1.0;
+    let right = (x + image_width as i32) as f32 / frame_width as f32 * 2.0 - 1.0;
+    let top = 1.0 - y as f32 / frame_height as f32 * 2.0;
+    let bottom = 1.0 - (y + image_height as i32) as f32 / frame_height as f32 * 2.0;
+    let opacity = opacity.clamp(0.0, 1.0);
+    let vertices = [
+        (left, top, 0.0, 0.0, opacity),
+        (right, top, 1.0, 0.0, opacity),
+        (left, bottom, 0.0, 1.0, opacity),
+        (left, bottom, 0.0, 1.0, opacity),
+        (right, top, 1.0, 0.0, opacity),
+        (right, bottom, 1.0, 1.0, opacity),
+    ];
+    vertices
+        .into_iter()
+        .flat_map(|vertex| {
+            [vertex.0, vertex.1, vertex.2, vertex.3, vertex.4]
+                .into_iter()
+                .flat_map(f32::to_ne_bytes)
+        })
+        .collect()
 }
 
 fn align_to(value: u32, alignment: u32) -> u32 {
@@ -3272,6 +3759,94 @@ mod tests {
         let frame = render_frame_gpu_hybrid(&project, &options, 2.0)?;
 
         assert_eq!(frame.get_pixel(0, 0), &options.background);
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_gpu_hybrid_composites_image_layer_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let image_path = media.join("red.png");
+        RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255])).save(&image_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 16;
+        project.settings.height = 16;
+        project.assets = vec![Asset {
+            id: "red".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/red.png"),
+        }];
+        let mut layer = image_test_layer("gpu-image", "red", 1, 4.0, 4.0);
+        layer.transform.width = 8.0;
+        layer.transform.height = 8.0;
+        project.tracks[0].layers = vec![layer];
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 0.5)?;
+
+        assert_eq!(frame.get_pixel(1, 1), &options.background);
+        assert!(
+            frame.get_pixel(6, 6)[0] > 240,
+            "GPU hybrid image layer が描画されていません: {:?}",
+            frame.get_pixel(6, 6)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn gpu_composite_image_layers_draws_rgba_texture_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let renderer = GpuFrameRenderer::new()?;
+        let base = RgbaImage::from_pixel(8, 8, Rgba([0, 0, 0, 255]));
+        let layer = GpuImageLayer {
+            image: RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255])),
+            x: 2,
+            y: 2,
+            opacity: 1.0,
+        };
+
+        let frame = renderer.composite_image_layers(base, &[layer])?;
+
+        assert_eq!(frame.get_pixel(1, 1), &Rgba([0, 0, 0, 255]));
+        assert!(
+            frame.get_pixel(3, 3)[0] > 240
+                && frame.get_pixel(3, 3)[1] < 10
+                && frame.get_pixel(3, 3)[2] < 10,
+            "GPU image layer が赤く描画されていません: {:?}",
+            frame.get_pixel(3, 3)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn gpu_composite_image_layers_applies_opacity_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let renderer = GpuFrameRenderer::new()?;
+        let base = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255]));
+        let layer = GpuImageLayer {
+            image: RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255])),
+            x: 0,
+            y: 0,
+            opacity: 0.5,
+        };
+
+        let frame = renderer.composite_image_layers(base, &[layer])?;
+        let pixel = frame.get_pixel(2, 2);
+
+        assert!(
+            pixel[0] > 90 && pixel[0] < 180 && pixel[2] > 90 && pixel[2] < 180,
+            "GPU opacity blend が中間色になっていません: {pixel:?}"
+        );
         Ok(())
     }
 
