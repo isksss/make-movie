@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { commands } from "../services/tauri";
+import { applyExternalAnalysisJson, sampleExternalAnalysisJson } from "../store/externalAnalysis";
 import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
@@ -111,6 +112,9 @@ export function App() {
   const labels = optionLabels[locale];
   const [commandStatus, setCommandStatus] = useState<string>(messages[defaultLocale].ready);
   const [fontFamilies, setFontFamilies] = useState<string[]>([]);
+  const [externalAnalysisJson, setExternalAnalysisJson] = useState<string>(
+    sampleExternalAnalysisJson,
+  );
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -1188,6 +1192,31 @@ export function App() {
             </div>
           ) : null}
           <div className="tts-editor">
+            <label>
+              {t.externalAnalysis}
+              <textarea
+                onChange={(event) => setExternalAnalysisJson(event.target.value)}
+                value={externalAnalysisJson}
+              />
+            </label>
+            <button
+              disabled={!selectedLayer}
+              onClick={() =>
+                selectedLayer &&
+                runCommand(async () => {
+                  const updated = await applyExternalAnalysisJson(
+                    project,
+                    selectedLayer.id,
+                    externalAnalysisJson,
+                  );
+                  setProject(updated);
+                }, t.externalAnalysisApplied)
+              }
+              title={t.applyExternalAnalysis}
+            >
+              <Wand2 size={16} />
+              <span>{t.applyExternalAnalysis}</span>
+            </button>
             <label>
               {t.provider}
               <select
