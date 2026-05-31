@@ -27,6 +27,7 @@ pollster = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 sha2 = "0.10"
 roxmltree = "0.20"
+skia-safe = "0.97.2"
 wgpu = "25"
 wasmtime = { version = "45", features = ["component-model"] }
 wasmtime-wasi = "45"

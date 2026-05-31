@@ -7,6 +7,7 @@ use mm_core::{
     Project, SubtitleLayer, SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke,
     Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
+use skia_safe::{image::CachingHint, surfaces, AlphaType, Color, ColorType, ImageInfo};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -41,6 +42,7 @@ impl RenderOptions {
 pub enum RenderBackend {
     Auto,
     Cpu,
+    Skia,
     Gpu,
 }
 
@@ -131,9 +133,10 @@ fn executable_names(name: &str) -> Vec<String> {
 pub fn render_project(project: &Project, options: &RenderOptions) -> Result<()> {
     let active_backend = match options.backend {
         RenderBackend::Cpu => ActiveRenderBackend::Cpu,
+        RenderBackend::Skia => ActiveRenderBackend::Skia(SkiaFrameRenderer::new()?),
         RenderBackend::Auto => match GpuFrameRenderer::new() {
             Ok(renderer) => ActiveRenderBackend::GpuHybrid(renderer),
-            Err(_) => ActiveRenderBackend::Cpu,
+            Err(_) => ActiveRenderBackend::Skia(SkiaFrameRenderer::new()?),
         },
         RenderBackend::Gpu => ActiveRenderBackend::GpuHybrid(GpuFrameRenderer::new()?),
     };
@@ -170,6 +173,7 @@ pub fn probe_gpu_backend() -> GpuProbe {
 
 enum ActiveRenderBackend {
     Cpu,
+    Skia(SkiaFrameRenderer),
     GpuHybrid(GpuFrameRenderer),
 }
 
@@ -666,6 +670,17 @@ fn render_frame_for_encode(
         (ActiveRenderBackend::Cpu, RawFrameMode::TransparentOverlay) => {
             render_transparent_overlay_frame(project, options, time)
         }
+        (ActiveRenderBackend::Skia(renderer), RawFrameMode::FullFrame) => {
+            render_frame_skia_with_renderer(project, options, time, renderer)
+        }
+        (ActiveRenderBackend::Skia(renderer), RawFrameMode::TransparentOverlay) => {
+            let frame = renderer.background_frame(
+                project.settings.width,
+                project.settings.height,
+                Rgba([0, 0, 0, 0]),
+            )?;
+            render_frame_on_base(project, options, time, frame, false)
+        }
         (ActiveRenderBackend::GpuHybrid(renderer), RawFrameMode::FullFrame) => {
             render_frame_gpu_hybrid_with_renderer(project, options, time, renderer)
         }
@@ -711,6 +726,29 @@ pub fn render_frame_gpu_hybrid(
     render_frame_gpu_hybrid_with_renderer(project, options, time, &renderer)
 }
 
+pub fn render_frame_skia(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+) -> Result<RgbaImage> {
+    let renderer = SkiaFrameRenderer::new()?;
+    render_frame_skia_with_renderer(project, options, time, &renderer)
+}
+
+fn render_frame_skia_with_renderer(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+    renderer: &SkiaFrameRenderer,
+) -> Result<RgbaImage> {
+    let frame = renderer.background_frame(
+        project.settings.width,
+        project.settings.height,
+        options.background,
+    )?;
+    render_frame_on_base(project, options, time, frame, true)
+}
+
 fn render_frame_gpu_hybrid_with_renderer(
     project: &Project,
     options: &RenderOptions,
@@ -751,6 +789,48 @@ fn render_frame_on_base(
 
 pub fn gpu_background_frame(width: u32, height: u32, color: Rgba<u8>) -> Result<RgbaImage> {
     GpuFrameRenderer::new()?.background_frame(width, height, color)
+}
+
+pub fn skia_background_frame(width: u32, height: u32, color: Rgba<u8>) -> Result<RgbaImage> {
+    SkiaFrameRenderer::new()?.background_frame(width, height, color)
+}
+
+pub struct SkiaFrameRenderer;
+
+impl SkiaFrameRenderer {
+    pub fn new() -> Result<Self> {
+        Ok(Self)
+    }
+
+    pub fn background_frame(&self, width: u32, height: u32, color: Rgba<u8>) -> Result<RgbaImage> {
+        if width == 0 || height == 0 {
+            bail!("Skia frame size は 1px 以上である必要があります");
+        }
+        let mut surface = surfaces::raster_n32_premul((width as i32, height as i32))
+            .context("Skia raster surface を作成できません")?;
+        surface
+            .canvas()
+            .clear(Color::from_argb(color[3], color[0], color[1], color[2]));
+        let image = surface.image_snapshot();
+        let info = ImageInfo::new(
+            (width as i32, height as i32),
+            ColorType::RGBA8888,
+            AlphaType::Unpremul,
+            None,
+        );
+        let mut pixels = vec![0; (u64::from(width) * u64::from(height) * 4) as usize];
+        if !image.read_pixels(
+            &info,
+            &mut pixels,
+            (width * 4) as usize,
+            (0, 0),
+            CachingHint::Disallow,
+        ) {
+            bail!("Skia surface から pixels を読み出せません");
+        }
+        RgbaImage::from_raw(width, height, pixels)
+            .context("Skia frame を RgbaImage に変換できません")
+    }
 }
 
 pub struct GpuFrameRenderer {
@@ -2460,12 +2540,34 @@ mod tests {
     }
 
     #[test]
+    fn render_frame_skia_draws_on_skia_background() -> Result<()> {
+        let project = text_project();
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([3, 6, 9, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert_eq!(frame.get_pixel(0, 0), &options.background);
+        assert!(has_non_background_pixel(&frame, options.background));
+        Ok(())
+    }
+
+    #[test]
     fn gpu_background_frame_clears_texture_when_available() -> Result<()> {
         if !probe_gpu_backend().available {
             return Ok(());
         }
 
         let frame = gpu_background_frame(4, 3, Rgba([9, 18, 27, 255]))?;
+
+        assert_eq!(frame.dimensions(), (4, 3));
+        assert!(frame.pixels().all(|pixel| pixel == &Rgba([9, 18, 27, 255])));
+        Ok(())
+    }
+
+    #[test]
+    fn skia_background_frame_clears_surface() -> Result<()> {
+        let frame = skia_background_frame(4, 3, Rgba([9, 18, 27, 255]))?;
 
         assert_eq!(frame.dimensions(), (4, 3));
         assert!(frame.pixels().all(|pixel| pixel == &Rgba([9, 18, 27, 255])));
