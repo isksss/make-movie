@@ -16,12 +16,12 @@ const metadata = {
 const metadataJson: string = metadataToJson(metadata);
 
 const plugin: MmPlugin = definePlugin({
-  metadata: () => metadataJson,
+  metadata: () => metadata,
   initialize: async () => undefined,
   shutdown: () => undefined,
 });
 
-const noopMetadata: string = noopPlugin.metadata();
+const noopMetadata: PluginMetadata = noopPlugin.metadata();
 
 void plugin;
 void noopMetadata;

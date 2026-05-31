@@ -8,14 +8,14 @@ type Plugin struct {
 
 var _ mmsdk.Plugin = (*Plugin)(nil)
 
-func (plugin *Plugin) Metadata() string {
-	return mmsdk.MustMetadataJSON(mmsdk.Metadata{
+func (plugin *Plugin) Metadata() mmsdk.Metadata {
+	return mmsdk.Metadata{
 		Name:        "go-basic",
 		Version:     "0.1.0",
 		Category:    mmsdk.CategoryUtility,
 		DisplayName: "Go Basic",
 		Description: "Go plugin template",
-	})
+	}
 }
 
 func (plugin *Plugin) Initialize() error {

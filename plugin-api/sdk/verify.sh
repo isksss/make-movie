@@ -7,7 +7,8 @@ wit="$root/plugin.wit"
 
 required_wit_patterns=(
   "package mm:plugin;"
-  "metadata: func() -> string;"
+  "record plugin-metadata {"
+  "metadata: func() -> plugin-metadata;"
   "initialize: func();"
   "shutdown: func();"
 )
