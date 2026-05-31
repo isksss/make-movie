@@ -93,3 +93,32 @@ jobs:
 
       - name: Tauri E2E
         run: xvfb-run -a pnpm --dir apps/mm-gui e2e:tauri
+
+  plugin-sdk-release:
+    name: Plugin SDK Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.24.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Verify SDK release packages
+        run: bash plugin-api/sdk/verify-release.sh

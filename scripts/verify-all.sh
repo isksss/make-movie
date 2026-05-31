@@ -33,6 +33,7 @@ run cargo clippy --manifest-path "$root/apps/mm-gui/src-tauri/Cargo.toml" --all-
 
 run bash "$root/plugin-api/sdk/generate.sh"
 run bash "$root/plugin-api/sdk/verify.sh"
+run bash "$root/plugin-api/sdk/verify-release.sh"
 run cargo test --manifest-path "$root/plugin-api/sdk/rust/Cargo.toml"
 run_in "$root/plugin-api/sdk/go" go test ./...
 run corepack pnpm --dir "$root/plugin-api/sdk/ts" install --silent
