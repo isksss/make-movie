@@ -66,6 +66,7 @@ struct PreviewArgs {
 enum CliRenderBackend {
     Auto,
     Cpu,
+    Skia,
     Gpu,
 }
 
@@ -74,6 +75,7 @@ impl From<CliRenderBackend> for RenderBackend {
         match value {
             CliRenderBackend::Auto => RenderBackend::Auto,
             CliRenderBackend::Cpu => RenderBackend::Cpu,
+            CliRenderBackend::Skia => RenderBackend::Skia,
             CliRenderBackend::Gpu => RenderBackend::Gpu,
         }
     }
@@ -531,7 +533,7 @@ const BUILD_HELP_JA: &str = r#"動画を書き出す
 オプション:
       --project <PROJECT>  project toml のパス [既定値: mm.toml]
       --output <OUTPUT>    出力先ファイル
-      --backend <BACKEND>  render backend [指定可能な値: auto, cpu, gpu]
+      --backend <BACKEND>  render backend [指定可能な値: auto, cpu, skia, gpu]
   -h, --help              ヘルプを表示する
 "#;
 
@@ -542,7 +544,7 @@ Usage: mm build [OPTIONS]
 Options:
       --project <PROJECT>  Path to project toml [default: mm.toml]
       --output <OUTPUT>    Output file
-      --backend <BACKEND>  Render backend [possible values: auto, cpu, gpu]
+      --backend <BACKEND>  Render backend [possible values: auto, cpu, skia, gpu]
   -h, --help              Print help
 "#;
 
@@ -553,7 +555,7 @@ const VALIDATE_HELP_JA: &str = r#"プロジェクトを検証する
 オプション:
       --project <PROJECT>  project toml のパス [既定値: mm.toml]
       --output <OUTPUT>    互換用オプション
-      --backend <BACKEND>  render backend [指定可能な値: auto, cpu, gpu]
+      --backend <BACKEND>  render backend [指定可能な値: auto, cpu, skia, gpu]
   -h, --help              ヘルプを表示する
 "#;
 
@@ -564,7 +566,7 @@ Usage: mm validate [OPTIONS]
 Options:
       --project <PROJECT>  Path to project toml [default: mm.toml]
       --output <OUTPUT>    Compatibility option
-      --backend <BACKEND>  Render backend [possible values: auto, cpu, gpu]
+      --backend <BACKEND>  Render backend [possible values: auto, cpu, skia, gpu]
   -h, --help              Print help
 "#;
 
@@ -791,9 +793,9 @@ mod tests {
 
     #[test]
     fn cli_parses_build_backend() {
-        let cli = Cli::try_parse_from(["mm", "build", "--backend", "gpu"]).unwrap();
+        let cli = Cli::try_parse_from(["mm", "build", "--backend", "skia"]).unwrap();
         match cli.command {
-            Command::Build(args) => assert!(matches!(args.backend, CliRenderBackend::Gpu)),
+            Command::Build(args) => assert!(matches!(args.backend, CliRenderBackend::Skia)),
             _ => panic!("build command として parse されていません"),
         }
     }

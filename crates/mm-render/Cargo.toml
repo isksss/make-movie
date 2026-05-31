@@ -12,6 +12,7 @@ image.workspace = true
 mm-core = { path = "../mm-core" }
 pollster.workspace = true
 roxmltree.workspace = true
+skia-safe.workspace = true
 which.workspace = true
 wgpu.workspace = true
 
