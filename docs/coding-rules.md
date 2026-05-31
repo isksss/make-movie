@@ -8,6 +8,12 @@
 - Issue の要求範囲に関係しないリファクタは行わない。
 - エラーは `anyhow::Context` などで原因と対象パスが分かる形にする。
 
+## 開発環境
+
+- ランタイムの標準バージョンは repository root の `.mise.toml` で管理する。
+- Node.js は 26 系、pnpm は `10.24.0` を標準とする。
+- ローカル検証前に `mise install` で必要なランタイムを揃える。
+
 ## Rust
 
 - `cargo fmt` の結果を正とする。
