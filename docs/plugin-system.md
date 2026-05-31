@@ -19,11 +19,15 @@ Plugin は追加機能専用です。Core 機能は置き換えません。
 - `plugin-api/sdk/ts`: `mm-sdk-ts`
 - `plugin-api/sdk/csharp`: `mm-sdk-csharp`
 
+SDK 開発は Rust、TypeScript、Go を重点対象として進めます。Rust は native / WASM 実装の主 SDK、TypeScript は script / AI / template 系 Plugin の主 SDK、Go は lightweight utility / backend integration 系 Plugin の主 SDK として機能を厚くします。C#、その他言語 SDK は `plugin.wit` 追従と最小 lifecycle の互換性維持を優先します。
+
 SDK 構成は次のコマンドで検証します。
 
 ```bash
 bash plugin-api/sdk/verify.sh
 ```
+
+Rust / TypeScript / Go で Plugin を開発する詳細手順は `docs/plugin-development-rust-ts-go.md` を参照します。
 
 ## Manifest / Lock
 

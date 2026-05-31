@@ -752,6 +752,24 @@ pub fn render_frame(project: &Project, options: &RenderOptions, time: f64) -> Re
     render_frame_on_base(project, options, time, frame, true)
 }
 
+pub fn render_frame_with_backend(
+    project: &Project,
+    options: &RenderOptions,
+    time: f64,
+) -> Result<RgbaImage> {
+    match options.backend {
+        RenderBackend::Auto => match GpuFrameRenderer::new() {
+            Ok(renderer) => {
+                render_frame_gpu_hybrid_with_renderer(project, options, time, &renderer)
+            }
+            Err(_) => render_frame_skia(project, options, time),
+        },
+        RenderBackend::Cpu => render_frame(project, options, time),
+        RenderBackend::Skia => render_frame_skia(project, options, time),
+        RenderBackend::Gpu => render_frame_gpu_hybrid(project, options, time),
+    }
+}
+
 pub fn render_frame_gpu_hybrid(
     project: &Project,
     options: &RenderOptions,
@@ -3804,6 +3822,18 @@ mod tests {
         let options = RenderOptions::new(".", "output.mp4");
 
         let frame = render_frame(&project, &options, 0.5)?;
+
+        assert!(has_non_background_pixel(&frame, options.background));
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_with_backend_uses_requested_cpu_backend() -> Result<()> {
+        let project = text_project();
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.backend = RenderBackend::Cpu;
+
+        let frame = render_frame_with_backend(&project, &options, 0.5)?;
 
         assert!(has_non_background_pixel(&frame, options.background));
         Ok(())
