@@ -1509,6 +1509,7 @@ fn skia_native_color_filter(effects: &[Effect]) -> Option<skia_safe::ColorFilter
     effects.iter().fold(None, |filter, effect| {
         let next = match *effect {
             Effect::Brightness { amount } if amount != 0.0 => Some(skia_brightness_filter(amount)),
+            Effect::Saturation { amount } if amount != 1.0 => Some(skia_saturation_filter(amount)),
             _ => None,
         };
         match (filter, next) {
@@ -1525,6 +1526,39 @@ fn skia_brightness_filter(amount: f32) -> skia_safe::ColorFilter {
         &[
             1.0, 0.0, 0.0, 0.0, offset, 0.0, 1.0, 0.0, 0.0, offset, 0.0, 0.0, 1.0, 0.0, offset,
             0.0, 0.0, 0.0, 1.0, 0.0,
+        ],
+        None,
+    )
+}
+
+fn skia_saturation_filter(amount: f32) -> skia_safe::ColorFilter {
+    let saturation = amount.max(0.0);
+    let inverse = 1.0 - saturation;
+    let rw = 0.2126 * inverse;
+    let gw = 0.7152 * inverse;
+    let bw = 0.0722 * inverse;
+    color_filters::matrix_row_major(
+        &[
+            rw + saturation,
+            gw,
+            bw,
+            0.0,
+            0.0,
+            rw,
+            gw + saturation,
+            bw,
+            0.0,
+            0.0,
+            rw,
+            gw,
+            bw + saturation,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
         ],
         None,
     )
@@ -1917,13 +1951,14 @@ fn apply_image_effects_except_skia_native(mut image: RgbaImage, effects: &[Effec
             Effect::Blur { radius } if radius > 0.0 => image,
             Effect::Brightness { amount } if amount != 0.0 => image,
             Effect::Contrast { amount } => imageops::contrast(&image, amount),
-            Effect::Saturation { amount } => adjust_saturation(&image, amount),
+            Effect::Saturation { amount } if amount != 1.0 => image,
             Effect::Pixelate { size } if size > 1 => pixelate(&image, size),
             Effect::MotionBlur { amount } if amount > 0.0 => motion_blur(&image, amount),
             Effect::FadeIn { .. }
             | Effect::FadeOut { .. }
             | Effect::Blur { .. }
             | Effect::Brightness { .. }
+            | Effect::Saturation { .. }
             | Effect::Zoom { .. }
             | Effect::Slide { .. }
             | Effect::Pixelate { .. }
@@ -3191,6 +3226,47 @@ mod tests {
         assert!(
             frame.get_pixel(12, 12)[0] > 80,
             "brightness による明るい pixel がありません"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_applies_image_saturation_with_native_filter() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let image_path = media.join("color.png");
+        RgbaImage::from_pixel(16, 16, Rgba([200, 40, 20, 255])).save(&image_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 24;
+        project.settings.height = 24;
+        project.assets = vec![Asset {
+            id: "color".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/color.png"),
+        }];
+        let mut layer = image_test_layer("desaturated", "color", 1, 4.0, 4.0);
+        layer.transform.width = 16.0;
+        layer.transform.height = 16.0;
+        layer.effects = vec![
+            Effect::Brightness { amount: 0.1 },
+            Effect::Saturation { amount: 0.0 },
+        ];
+        project.tracks[0].layers = vec![layer];
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+        let pixel = frame.get_pixel(12, 12);
+
+        assert!(skia_image_paint(1.0, &[Effect::Saturation { amount: 0.0 }])
+            .color_filter()
+            .is_some());
+        assert!(
+            (i16::from(pixel[0]) - i16::from(pixel[1])).abs() <= 2
+                && (i16::from(pixel[1]) - i16::from(pixel[2])).abs() <= 2,
+            "saturation 0.0 によるグレースケール pixel ではありません: {pixel:?}"
         );
         Ok(())
     }
