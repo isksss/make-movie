@@ -830,11 +830,7 @@ fn gpu_image_layer(
     let LayerContent::Image(content) = &layer.content else {
         return Ok(None);
     };
-    if content.mask.is_some()
-        || content.fit.is_some()
-        || transform.rotation != 0.0
-        || layer.transition.is_some()
-    {
+    if content.mask.is_some() || content.fit.is_some() || layer.transition.is_some() {
         return Ok(None);
     }
 
@@ -852,12 +848,16 @@ fn gpu_image_layer(
         resolve_layer_crop(layer, content.crop, time - layer.start),
     );
     let image = apply_image_effects(image, &layer.effects);
-    let (image, x, y) = prepare_image_for_transform(&image, transform, content.fit);
+    let mut transform_without_rotation = transform;
+    transform_without_rotation.rotation = 0.0;
+    let (image, x, y) =
+        prepare_image_for_transform(&image, transform_without_rotation, content.fit);
     Ok(Some(GpuImageLayer {
         image,
         x,
         y,
         opacity: transform.opacity,
+        rotation: transform.rotation,
     }))
 }
 
@@ -1383,6 +1383,7 @@ struct GpuImageLayer {
     x: i32,
     y: i32,
     opacity: f32,
+    rotation: f32,
 }
 
 impl GpuFrameRenderer {
@@ -1647,12 +1648,14 @@ impl GpuFrameRenderer {
             x: 0,
             y: 0,
             opacity: 1.0,
+            rotation: 0.0,
         }];
         draw_layers.extend(layers.iter().map(|layer| GpuImageLayerRef {
             image: &layer.image,
             x: layer.x,
             y: layer.y,
             opacity: layer.opacity,
+            rotation: layer.rotation,
         }));
         let mut draw_resources = Vec::with_capacity(draw_layers.len());
         for layer in draw_layers {
@@ -1680,6 +1683,7 @@ impl GpuFrameRenderer {
                 layer.x,
                 layer.y,
                 layer.opacity,
+                layer.rotation,
             );
             let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("mm gpu image vertex buffer"),
@@ -1857,6 +1861,7 @@ struct GpuImageLayerRef<'a> {
     x: i32,
     y: i32,
     opacity: f32,
+    rotation: f32,
 }
 
 struct GpuDrawResource {
@@ -1908,19 +1913,33 @@ fn gpu_image_vertices(
     x: i32,
     y: i32,
     opacity: f32,
+    rotation: f32,
 ) -> Vec<u8> {
-    let left = x as f32 / frame_width as f32 * 2.0 - 1.0;
-    let right = (x + image_width as i32) as f32 / frame_width as f32 * 2.0 - 1.0;
-    let top = 1.0 - y as f32 / frame_height as f32 * 2.0;
-    let bottom = 1.0 - (y + image_height as i32) as f32 / frame_height as f32 * 2.0;
+    let left = x as f32;
+    let right = x as f32 + image_width as f32;
+    let top = y as f32;
+    let bottom = y as f32 + image_height as f32;
+    let center_x = left + image_width as f32 / 2.0;
+    let center_y = top + image_height as f32 / 2.0;
     let opacity = opacity.clamp(0.0, 1.0);
+    let position = |px: f32, py: f32| {
+        let (px, py) = rotate_point(px, py, center_x, center_y, rotation);
+        (
+            px / frame_width as f32 * 2.0 - 1.0,
+            1.0 - py / frame_height as f32 * 2.0,
+        )
+    };
+    let top_left = position(left, top);
+    let top_right = position(right, top);
+    let bottom_left = position(left, bottom);
+    let bottom_right = position(right, bottom);
     let vertices = [
-        (left, top, 0.0, 0.0, opacity),
-        (right, top, 1.0, 0.0, opacity),
-        (left, bottom, 0.0, 1.0, opacity),
-        (left, bottom, 0.0, 1.0, opacity),
-        (right, top, 1.0, 0.0, opacity),
-        (right, bottom, 1.0, 1.0, opacity),
+        (top_left.0, top_left.1, 0.0, 0.0, opacity),
+        (top_right.0, top_right.1, 1.0, 0.0, opacity),
+        (bottom_left.0, bottom_left.1, 0.0, 1.0, opacity),
+        (bottom_left.0, bottom_left.1, 0.0, 1.0, opacity),
+        (top_right.0, top_right.1, 1.0, 0.0, opacity),
+        (bottom_right.0, bottom_right.1, 1.0, 1.0, opacity),
     ];
     vertices
         .into_iter()
@@ -1930,6 +1949,21 @@ fn gpu_image_vertices(
                 .flat_map(f32::to_ne_bytes)
         })
         .collect()
+}
+
+fn rotate_point(x: f32, y: f32, center_x: f32, center_y: f32, degrees: f32) -> (f32, f32) {
+    if degrees == 0.0 {
+        return (x, y);
+    }
+    let radians = degrees.to_radians();
+    let cos = radians.cos();
+    let sin = radians.sin();
+    let dx = x - center_x;
+    let dy = y - center_y;
+    (
+        center_x + dx * cos - dy * sin,
+        center_y + dx * sin + dy * cos,
+    )
 }
 
 fn align_to(value: u32, alignment: u32) -> u32 {
@@ -3811,6 +3845,7 @@ mod tests {
             x: 2,
             y: 2,
             opacity: 1.0,
+            rotation: 0.0,
         };
 
         let frame = renderer.composite_image_layers(base, &[layer])?;
@@ -3838,6 +3873,7 @@ mod tests {
             x: 0,
             y: 0,
             opacity: 0.5,
+            rotation: 0.0,
         };
 
         let frame = renderer.composite_image_layers(base, &[layer])?;
@@ -3846,6 +3882,75 @@ mod tests {
         assert!(
             pixel[0] > 90 && pixel[0] < 180 && pixel[2] > 90 && pixel[2] < 180,
             "GPU opacity blend が中間色になっていません: {pixel:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn gpu_composite_image_layers_rotates_rgba_texture_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let renderer = GpuFrameRenderer::new()?;
+        let base = RgbaImage::from_pixel(12, 12, Rgba([0, 0, 0, 255]));
+        let layer = GpuImageLayer {
+            image: RgbaImage::from_pixel(2, 6, Rgba([255, 0, 0, 255])),
+            x: 5,
+            y: 3,
+            opacity: 1.0,
+            rotation: 90.0,
+        };
+
+        let frame = renderer.composite_image_layers(base, &[layer])?;
+
+        assert_eq!(frame.get_pixel(6, 3), &Rgba([0, 0, 0, 255]));
+        assert!(
+            frame.get_pixel(4, 6)[0] > 200,
+            "GPU rotation 後の左側 pixel が赤く描画されていません: {:?}",
+            frame.get_pixel(4, 6)
+        );
+        assert!(
+            frame.get_pixel(8, 6)[0] > 200,
+            "GPU rotation 後の右側 pixel が赤く描画されていません: {:?}",
+            frame.get_pixel(8, 6)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_gpu_hybrid_composites_rotated_image_layer_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let image_path = media.join("red.png");
+        RgbaImage::from_pixel(2, 6, Rgba([255, 0, 0, 255])).save(&image_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 12;
+        project.settings.height = 12;
+        project.assets = vec![Asset {
+            id: "red".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/red.png"),
+        }];
+        let mut layer = image_test_layer("gpu-image", "red", 1, 5.0, 3.0);
+        layer.transform.width = 2.0;
+        layer.transform.height = 6.0;
+        layer.transform.rotation = 90.0;
+        project.tracks[0].layers = vec![layer];
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 0.5)?;
+
+        assert_eq!(frame.get_pixel(6, 3), &options.background);
+        assert!(
+            frame.get_pixel(4, 6)[0] > 200,
+            "GPU hybrid rotation layer が描画されていません: {:?}",
+            frame.get_pixel(4, 6)
         );
         Ok(())
     }
