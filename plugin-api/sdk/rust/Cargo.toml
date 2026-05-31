@@ -3,7 +3,13 @@ name = "mm-sdk-rust"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Rust SDK for make-movie WASM plugins"
 repository = "https://github.com/isksss/make-movie"
+homepage = "https://github.com/isksss/make-movie"
+readme = "README.md"
+keywords = ["make-movie", "plugin", "wasm", "wit"]
+categories = ["api-bindings", "wasm"]
+include = ["Cargo.toml", "README.md", "src/**/*.rs", "examples/**/*.rs"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
