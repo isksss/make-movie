@@ -23,7 +23,7 @@ jobs:
       - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg libfontconfig-dev libfreetype-dev
 
       - name: Check format
         run: cargo fmt --check
@@ -37,7 +37,6 @@ jobs:
   gui:
     name: GUI
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('apps/mm-gui/package.json') != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +45,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            ffmpeg \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
@@ -53,6 +53,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -78,6 +80,9 @@ jobs:
 
       - name: Build
         run: pnpm --dir apps/mm-gui build
+
+      - name: Prepare Tauri sidecars
+        run: bash scripts/prepare-tauri-sidecars.sh
 
       - name: Test Tauri backend
         run: cargo test --manifest-path apps/mm-gui/src-tauri/Cargo.toml
