@@ -6,7 +6,8 @@ use mm_plugin_runtime::{
     PluginManager, PluginReference, default_global_config_path, default_plugin_dir, load_manifest,
 };
 use mm_render::{
-    FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator, render_frame, render_project,
+    FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator, render_frame_with_backend,
+    render_project,
 };
 use std::env;
 use std::fs;
@@ -63,6 +64,8 @@ struct PreviewArgs {
     output: Option<PathBuf>,
     #[arg(long, default_value_t = 0.0)]
     time: f64,
+    #[arg(long, value_enum, default_value_t = CliRenderBackend::Auto)]
+    backend: CliRenderBackend,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -408,8 +411,9 @@ fn preview(args: PreviewArgs, messages: Messages) -> Result<()> {
             )
         })?;
     }
-    let options = RenderOptions::new(&project_root, &output);
-    let frame = render_frame(
+    let mut options = RenderOptions::new(&project_root, &output);
+    options.backend = args.backend.into();
+    let frame = render_frame_with_backend(
         &project,
         &options,
         args.time.clamp(0.0, project.settings.duration),
@@ -732,6 +736,7 @@ const PREVIEW_HELP_JA: &str = r#"プレビュー画像を書き出す
       --project <PROJECT>  project toml のパス [既定値: mm.toml]
       --output <OUTPUT>    出力先 PNG
       --time <TIME>        プレビュー時刻（秒） [既定値: 0]
+      --backend <BACKEND>  render backend [指定可能な値: auto, cpu, skia, gpu]
   -h, --help              ヘルプを表示する
 "#;
 
@@ -743,6 +748,7 @@ Options:
       --project <PROJECT>  Path to project toml [default: mm.toml]
       --output <OUTPUT>    Output PNG
       --time <TIME>        Preview time in seconds [default: 0]
+      --backend <BACKEND>  Render backend [possible values: auto, cpu, skia, gpu]
   -h, --help              Print help
 "#;
 
@@ -1018,6 +1024,8 @@ mod tests {
             "0.5",
             "--output",
             "preview.png",
+            "--backend",
+            "cpu",
         ])
         .unwrap();
         match cli.command {
@@ -1025,6 +1033,7 @@ mod tests {
                 assert_eq!(args.project, PathBuf::from("example/mm.toml"));
                 assert_eq!(args.time, 0.5);
                 assert_eq!(args.output, Some(PathBuf::from("preview.png")));
+                assert!(matches!(args.backend, CliRenderBackend::Cpu));
             }
             _ => panic!("preview command として parse されていません"),
         }

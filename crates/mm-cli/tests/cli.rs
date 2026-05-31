@@ -326,6 +326,8 @@ fn preview_command_writes_png_frame() {
         .arg("0.5")
         .arg("--output")
         .arg(&output)
+        .arg("--backend")
+        .arg("cpu")
         .assert()
         .success();
 
