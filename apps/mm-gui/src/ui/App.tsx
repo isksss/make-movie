@@ -19,14 +19,14 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { commands } from "../services/tauri";
 import { parseProjectToml, serializeProjectToToml } from "../store/projectToml";
 import { useProjectStore } from "../store/projectStore";
 import { usePreviewStore } from "../store/previewStore";
 import { cropRect, layerAnimation, layerEffect, layerTransform, layerTransition } from "../types";
 import type { AssetKind, PluginDeclaration, ProjectState, TtsProviderKind } from "../types";
-import { messages, optionLabels } from "./i18n";
+import { initialLocale, localeStorageKey, messages, optionLabels } from "./i18n";
 import type { Locale } from "./i18n";
 import { PreviewCanvas } from "./PreviewCanvas";
 
@@ -78,6 +78,7 @@ const easingOptions = [
 const ttsProviderOptions = ["voicevox", "aivis_speech", "coeiro_ink"] as const;
 
 export function App() {
+  const defaultLocale = initialLocale();
   const {
     project,
     selectedAssetId,
@@ -105,10 +106,15 @@ export function App() {
     canRedo,
   } = useProjectStore();
   const preview = usePreviewStore();
-  const [locale, setLocale] = useState<Locale>("ja");
+  const [locale, setLocale] = useState<Locale>(defaultLocale);
   const t = messages[locale];
   const labels = optionLabels[locale];
-  const [commandStatus, setCommandStatus] = useState<string>(t.ready);
+  const [commandStatus, setCommandStatus] = useState<string>(messages[defaultLocale].ready);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    localStorage.setItem(localeStorageKey, locale);
+  }, [locale]);
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;

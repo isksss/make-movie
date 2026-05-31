@@ -18,6 +18,7 @@ declare global {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem("mm.locale", "ja");
     const calls: TauriCall[] = [];
     const importedProjectToml = (assetId: string, assetKind: string, assetPath: string) =>
       [
