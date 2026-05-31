@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "./fixtures";
 
 const projectPath = join(process.cwd(), "src-tauri", "mm.toml");
+const windowNotReadyMessage = "window 'main' not found after retries";
 
 test.beforeEach(() => {
   rmSync(projectPath, { force: true });
@@ -12,8 +13,30 @@ test.afterEach(() => {
   rmSync(projectPath, { force: true });
 });
 
+async function waitForTauriWindow(tauriPage: {
+  waitForFunction: (expression: string, timeout?: number) => Promise<void>;
+}) {
+  const deadline = Date.now() + 60_000;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      await tauriPage.waitForFunction("document.body.innerText.includes('make-movie')", 10_000);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!String(error).includes(windowNotReadyMessage)) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+
+  throw lastError;
+}
+
 test("Tauri実アプリで表示と保存IPCを検証できる", async ({ tauriPage }) => {
-  await tauriPage.waitForFunction("document.body.innerText.includes('make-movie')", 30_000);
+  await waitForTauriWindow(tauriPage);
   await tauriPage.locator(".language-select select").selectOption("ja");
   await expect(tauriPage.locator(".brand")).toContainText("make-movie");
   await expect(tauriPage.locator(".assets-pane")).toContainText("アセット");
