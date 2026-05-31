@@ -1025,7 +1025,45 @@ impl SkiaFrameRenderer {
     ) {
         for (line_index, line) in text.text.lines().enumerate() {
             let y = baseline_y + line_index as f32 * line_height;
-            canvas.draw_str_align(line, (x, y), font, paint, align);
+            if text.letter_spacing == 0.0 {
+                canvas.draw_str_align(line, (x, y), font, paint, align);
+            } else {
+                self.draw_text_line_with_letter_spacing(
+                    canvas,
+                    line,
+                    text.letter_spacing,
+                    font,
+                    paint,
+                    align,
+                    x,
+                    y,
+                );
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_text_line_with_letter_spacing(
+        &self,
+        canvas: &skia_safe::Canvas,
+        line: &str,
+        letter_spacing: f32,
+        font: &SkiaFont,
+        paint: &Paint,
+        align: text_utils::Align,
+        x: f32,
+        baseline_y: f32,
+    ) {
+        let line_width = skia_measure_text_with_letter_spacing(font, line, letter_spacing);
+        let mut pen_x = match align {
+            text_utils::Align::Left => x,
+            text_utils::Align::Center => x - line_width / 2.0,
+            text_utils::Align::Right => x - line_width,
+        };
+        for character in line.chars() {
+            let glyph = character.to_string();
+            canvas.draw_str(&glyph, (pen_x, baseline_y), font, paint);
+            pen_x += font.measure_str(&glyph, Some(paint)).0 + letter_spacing;
         }
     }
 
@@ -1369,7 +1407,17 @@ fn draw_layer_content(
 }
 
 fn is_skia_native_text_supported(text: &TextLayer, _transform: Transform) -> bool {
-    text.font_asset_id.is_none() && text.letter_spacing == 0.0
+    text.font_asset_id.is_none()
+}
+
+fn skia_measure_text_with_letter_spacing(font: &SkiaFont, text: &str, letter_spacing: f32) -> f32 {
+    let mut width = 0.0;
+    let mut count: usize = 0;
+    for character in text.chars() {
+        width += font.measure_str(character.to_string(), None).0;
+        count += 1;
+    }
+    width + letter_spacing * count.saturating_sub(1) as f32
 }
 
 fn skia_text_paint(color: Rgba<u8>, opacity: f32) -> Paint {
@@ -3188,6 +3236,70 @@ mod tests {
                 .pixels()
                 .any(|pixel| pixel[2] > 140 && pixel[0] < 120 && pixel[1] < 120),
             "rotated shadow の青い pixel がありません"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_draws_letter_spaced_text_with_native_text() -> Result<()> {
+        let mut project = text_project();
+        project.settings.width = 260;
+        project.settings.height = 170;
+        let transform = Transform {
+            x: 130.0,
+            y: 36.0,
+            width: 160.0,
+            height: 86.0,
+            scale: 1.0,
+            rotation: 12.0,
+            opacity: 1.0,
+        };
+        let LayerContent::Text(text) = &mut project.tracks[0].layers[0].content else {
+            panic!("text layer ではありません");
+        };
+        text.text = "Skia\nText".to_string();
+        text.font_size = 32.0;
+        text.color = "#ffffff".to_string();
+        text.align = TextAlign::Center;
+        text.stroke = Some(TextStroke {
+            color: "#ff0000".to_string(),
+            width: 2.0,
+        });
+        text.shadow = Some(TextShadow {
+            color: "#0000ff".to_string(),
+            offset_x: 6.0,
+            offset_y: 8.0,
+            blur: 0.0,
+        });
+        text.gradient = Some(TextGradient {
+            start_color: "#00ff00".to_string(),
+            end_color: "#ffffff".to_string(),
+            direction: GradientDirection::Horizontal,
+        });
+        text.font_asset_id = None;
+        text.letter_spacing = 8.0;
+        assert!(is_skia_native_text_supported(text, transform));
+        text.font_asset_id = Some("custom-font".to_string());
+        assert!(!is_skia_native_text_supported(text, transform));
+        text.font_asset_id = None;
+        project.tracks[0].layers[0].transform = transform;
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert!(has_non_background_pixel(&frame, options.background));
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[0] > 140 && pixel[1] < 100 && pixel[2] < 100),
+            "letter spacing stroke の赤い pixel がありません"
+        );
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[2] > 140 && pixel[0] < 120 && pixel[1] < 120),
+            "letter spacing shadow の青い pixel がありません"
         );
         Ok(())
     }
