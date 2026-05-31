@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
-use flate2::{write::GzEncoder, Compression};
+use flate2::{Compression, write::GzEncoder};
 use mm_core::{load_project, validate_project};
 use mm_plugin_runtime::{
-    default_global_config_path, default_plugin_dir, load_manifest, PluginManager, PluginReference,
+    PluginManager, PluginReference, default_global_config_path, default_plugin_dir, load_manifest,
 };
 use mm_render::{
-    render_frame, render_project, FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator,
+    FfmpegLocator, RenderBackend, RenderOptions, SystemFfmpegLocator, render_frame, render_project,
 };
 use std::env;
 use std::fs;
