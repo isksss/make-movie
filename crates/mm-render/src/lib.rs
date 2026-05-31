@@ -1509,6 +1509,7 @@ fn skia_native_color_filter(effects: &[Effect]) -> Option<skia_safe::ColorFilter
     effects.iter().fold(None, |filter, effect| {
         let next = match *effect {
             Effect::Brightness { amount } if amount != 0.0 => Some(skia_brightness_filter(amount)),
+            Effect::Contrast { amount } if amount != 0.0 => Some(skia_contrast_filter(amount)),
             Effect::Saturation { amount } if amount != 1.0 => Some(skia_saturation_filter(amount)),
             _ => None,
         };
@@ -1521,11 +1522,23 @@ fn skia_native_color_filter(effects: &[Effect]) -> Option<skia_safe::ColorFilter
 }
 
 fn skia_brightness_filter(amount: f32) -> skia_safe::ColorFilter {
-    let offset = amount * 255.0;
+    let offset = amount;
     color_filters::matrix_row_major(
         &[
             1.0, 0.0, 0.0, 0.0, offset, 0.0, 1.0, 0.0, 0.0, offset, 0.0, 0.0, 1.0, 0.0, offset,
             0.0, 0.0, 0.0, 1.0, 0.0,
+        ],
+        None,
+    )
+}
+
+fn skia_contrast_filter(amount: f32) -> skia_safe::ColorFilter {
+    let percent = ((100.0 + amount) / 100.0).powi(2);
+    let offset = 0.5 * (1.0 - percent);
+    color_filters::matrix_row_major(
+        &[
+            percent, 0.0, 0.0, 0.0, offset, 0.0, percent, 0.0, 0.0, offset, 0.0, 0.0, percent, 0.0,
+            offset, 0.0, 0.0, 0.0, 1.0, 0.0,
         ],
         None,
     )
@@ -1950,7 +1963,7 @@ fn apply_image_effects_except_skia_native(mut image: RgbaImage, effects: &[Effec
         image = match *effect {
             Effect::Blur { radius } if radius > 0.0 => image,
             Effect::Brightness { amount } if amount != 0.0 => image,
-            Effect::Contrast { amount } => imageops::contrast(&image, amount),
+            Effect::Contrast { amount } if amount != 0.0 => image,
             Effect::Saturation { amount } if amount != 1.0 => image,
             Effect::Pixelate { size } if size > 1 => pixelate(&image, size),
             Effect::MotionBlur { amount } if amount > 0.0 => motion_blur(&image, amount),
@@ -1958,6 +1971,7 @@ fn apply_image_effects_except_skia_native(mut image: RgbaImage, effects: &[Effec
             | Effect::FadeOut { .. }
             | Effect::Blur { .. }
             | Effect::Brightness { .. }
+            | Effect::Contrast { .. }
             | Effect::Saturation { .. }
             | Effect::Zoom { .. }
             | Effect::Slide { .. }
@@ -3267,6 +3281,53 @@ mod tests {
             (i16::from(pixel[0]) - i16::from(pixel[1])).abs() <= 2
                 && (i16::from(pixel[1]) - i16::from(pixel[2])).abs() <= 2,
             "saturation 0.0 によるグレースケール pixel ではありません: {pixel:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_applies_image_contrast_with_native_filter() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let image_path = media.join("gray.png");
+        let mut image = RgbaImage::from_pixel(16, 16, Rgba([128, 128, 128, 255]));
+        for y in 0..16 {
+            for x in 0..8 {
+                image.put_pixel(x, y, Rgba([90, 90, 90, 255]));
+            }
+        }
+        image.save(&image_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 24;
+        project.settings.height = 24;
+        project.assets = vec![Asset {
+            id: "gray".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/gray.png"),
+        }];
+        let mut layer = image_test_layer("contrasted", "gray", 1, 4.0, 4.0);
+        layer.transform.width = 16.0;
+        layer.transform.height = 16.0;
+        layer.effects = vec![
+            Effect::Contrast { amount: 50.0 },
+            Effect::Brightness { amount: 0.05 },
+            Effect::Saturation { amount: 1.0 },
+        ];
+        project.tracks[0].layers = vec![layer];
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert!(skia_image_paint(1.0, &[Effect::Contrast { amount: 50.0 }])
+            .color_filter()
+            .is_some());
+        assert!(
+            frame.get_pixel(6, 12)[0] < 80,
+            "contrast による暗い pixel がありません: {:?}",
+            frame.get_pixel(6, 12)
         );
         Ok(())
     }
