@@ -94,8 +94,29 @@
     white-space: nowrap;
   }
 
+  .render-backend-select {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    white-space: nowrap;
+  }
+
+  .render-backend-select select,
   .language-select select {
     min-height: 30px;
+  }
+
+  .gpu-status {
+    color: #a8bac4;
+    font-size: 12px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gpu-status.available {
+    color: #8dd6a3;
   }
 
   .toolbar button,
@@ -233,7 +254,7 @@
     align-items: center;
     display: grid;
     gap: 8px;
-    grid-template-columns: repeat(4, 34px) 1fr 82px;
+    grid-template-columns: repeat(4, 34px) 1fr 82px 34px;
   }
 
   .preview-controls input {
