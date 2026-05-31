@@ -5,7 +5,9 @@ use mm_core::{
 use mm_plugin_runtime::{
     default_global_config_path, default_plugin_dir, PluginManager, PluginReference,
 };
-use mm_render::{render_project, BundledFfmpegLocator, FfmpegLocator, RenderOptions};
+use mm_render::{
+    render_project, system_font_families, BundledFfmpegLocator, FfmpegLocator, RenderOptions,
+};
 use std::env;
 use std::path::PathBuf;
 
@@ -28,6 +30,11 @@ fn build_project(path: String) -> Result<(), String> {
     let project_path = PathBuf::from(&path);
     let options = gui_render_options(&project_path, &project, bundled_binary_dir());
     render_project(&project, &options).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn list_system_fonts() -> Vec<String> {
+    system_font_families()
 }
 
 #[tauri::command]
@@ -140,7 +147,8 @@ pub fn run() {
     let builder = tauri::Builder::default().invoke_handler(tauri::generate_handler![
         load_project,
         save_project,
-        build_project,
+            build_project,
+            list_system_fonts,
             import_asset,
             import_asset_into_project,
             install_plugin,
@@ -168,6 +176,12 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
             .expect("env lock poisoned")
+    }
+
+    #[test]
+    fn list_system_fonts_returns_sorted_unique_names() {
+        let fonts = list_system_fonts();
+        assert!(fonts.windows(2).all(|window| window[0] < window[1]));
     }
 
     #[test]

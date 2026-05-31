@@ -110,11 +110,18 @@ export function App() {
   const t = messages[locale];
   const labels = optionLabels[locale];
   const [commandStatus, setCommandStatus] = useState<string>(messages[defaultLocale].ready);
+  const [fontFamilies, setFontFamilies] = useState<string[]>([]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
     localStorage.setItem(localeStorageKey, locale);
   }, [locale]);
+  useEffect(() => {
+    void commands
+      .listSystemFonts()
+      .then((fonts) => setFontFamilies(Array.isArray(fonts) ? fonts : []))
+      .catch(() => setFontFamilies([]));
+  }, []);
   const selectedLayer =
     project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
   const selectedTransform = selectedLayer ? layerTransform(selectedLayer.transform) : null;
@@ -127,6 +134,10 @@ export function App() {
   const selectedTransition = selectedLayer ? layerTransition(selectedLayer.transition) : null;
   const selectedEffect = selectedLayer ? layerEffect(selectedLayer.effects[0]) : null;
   const selectedAnimation = selectedLayer ? layerAnimation(selectedLayer.animations[0]) : null;
+  const fontFamilyOptions =
+    selectedText?.fontFamily && !fontFamilies.includes(selectedText.fontFamily)
+      ? [selectedText.fontFamily, ...fontFamilies]
+      : fontFamilies;
   const pluginNames =
     project.plugins.length > 0 ? project.plugins.map(pluginDisplayName) : [...fallbackPlugins];
   const runCommand = async (action: () => Promise<unknown>, successMessage: string) => {
@@ -390,6 +401,22 @@ export function App() {
                       type="number"
                       value={selectedText.fontSize}
                     />
+                  </label>
+                  <label>
+                    {t.fontFamily}
+                    <select
+                      onChange={(event) =>
+                        updateLayerText(selectedLayer.id, { fontFamily: event.target.value })
+                      }
+                      value={selectedText.fontFamily}
+                    >
+                      <option value="">{t.systemDefaultFont}</option>
+                      {fontFamilyOptions.map((fontFamily) => (
+                        <option key={fontFamily} value={fontFamily}>
+                          {fontFamily}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     {t.textColor}

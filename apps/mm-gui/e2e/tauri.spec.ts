@@ -9,7 +9,7 @@ declare global {
   interface Window {
     __TAURI_TEST_CALLS__: TauriCall[];
     __TAURI_INTERNALS__: {
-      invoke: (cmd: string, args: Record<string, unknown>) => Promise<string | null>;
+      invoke: (cmd: string, args: Record<string, unknown>) => Promise<unknown>;
       transformCallback: () => number;
       unregisterCallback: () => undefined;
     };
@@ -96,6 +96,9 @@ test.beforeEach(async ({ page }) => {
     window.__TAURI_TEST_CALLS__ = calls;
     window.__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === "list_system_fonts") {
+          return ["HackGen", "Inter"];
+        }
         calls.push({ cmd, args });
         if (cmd === "load_project") {
           return [
@@ -165,6 +168,24 @@ test.beforeEach(async ({ page }) => {
       unregisterCallback: () => undefined,
     };
   });
+});
+
+test("Textレイヤーでシステムフォントを選択して保存できる", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("combobox", { name: "フォント" }).selectOption("HackGen");
+  await page.getByRole("button", { name: "プロジェクトを保存" }).click();
+
+  const calls = await page.evaluate(() => window.__TAURI_TEST_CALLS__);
+  expect(calls).toEqual([
+    {
+      cmd: "save_project",
+      args: expect.objectContaining({
+        path: "mm.toml",
+        toml: expect.stringContaining('font_family = "HackGen"'),
+      }),
+    },
+  ]);
 });
 
 test("toolbarからTauriコマンドを呼び出せる", async ({ page }) => {

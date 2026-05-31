@@ -14,6 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 anyhow = "1"
+fontdb = "0.23"
 mm-core = { path = "../../../crates/mm-core" }
 mm-plugin-runtime = { path = "../../../crates/mm-plugin-runtime" }
 mm-render = { path = "../../../crates/mm-render" }
