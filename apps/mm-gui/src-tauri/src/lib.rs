@@ -212,15 +212,21 @@ mod tests {
     fn plugin_commands_install_update_and_remove() {
         let _guard = env_lock();
         let dir = tempfile::tempdir().expect("temp dir を作成できる");
-        env::set_var("MM_PLUGIN_DIR", dir.path().join("plugins"));
-        env::set_var("MM_PLUGIN_LOCK", dir.path().join("mm.lock"));
+        // SAFETY: This test owns MM_PLUGIN_DIR and MM_PLUGIN_LOCK while holding env_lock.
+        unsafe {
+            env::set_var("MM_PLUGIN_DIR", dir.path().join("plugins"));
+            env::set_var("MM_PLUGIN_LOCK", dir.path().join("mm.lock"));
+        }
 
         install_plugin("theme".to_string()).expect("plugin を install できる");
         update_plugin("theme".to_string()).expect("plugin を update できる");
         remove_plugin("theme".to_string()).expect("plugin を remove できる");
 
-        env::remove_var("MM_PLUGIN_DIR");
-        env::remove_var("MM_PLUGIN_LOCK");
+        // SAFETY: This test owns MM_PLUGIN_DIR and MM_PLUGIN_LOCK while holding env_lock.
+        unsafe {
+            env::remove_var("MM_PLUGIN_DIR");
+            env::remove_var("MM_PLUGIN_LOCK");
+        }
         let lock = std::fs::read_to_string(dir.path().join("mm.lock")).expect("lock を読める");
         assert!(!lock.contains("theme"));
     }
@@ -245,13 +251,19 @@ path = "{}"
             ),
         )
         .expect("project config を書ける");
-        env::set_var("MM_PLUGIN_DIR", &plugin_dir);
+        // SAFETY: This test owns MM_PLUGIN_DIR while holding env_lock.
+        unsafe {
+            env::set_var("MM_PLUGIN_DIR", &plugin_dir);
+        }
 
         let installed =
             install_configured_plugins(project_path.display().to_string(), None)
                 .expect("設定済み plugin を install できる");
 
-        env::remove_var("MM_PLUGIN_DIR");
+        // SAFETY: This test owns MM_PLUGIN_DIR while holding env_lock.
+        unsafe {
+            env::remove_var("MM_PLUGIN_DIR");
+        }
         assert_eq!(installed, vec!["theme"]);
         let lock = std::fs::read_to_string(dir.path().join("mm.lock")).expect("project lock を読める");
         assert!(lock.contains("theme"));
