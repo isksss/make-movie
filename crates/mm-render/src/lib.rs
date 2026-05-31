@@ -830,7 +830,7 @@ fn gpu_image_layer(
     let LayerContent::Image(content) = &layer.content else {
         return Ok(None);
     };
-    if content.mask.is_some() || content.fit.is_some() || layer.transition.is_some() {
+    if content.mask.is_some() || layer.transition.is_some() {
         return Ok(None);
     }
 
@@ -3951,6 +3951,46 @@ mod tests {
             frame.get_pixel(4, 6)[0] > 200,
             "GPU hybrid rotation layer が描画されていません: {:?}",
             frame.get_pixel(4, 6)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_gpu_hybrid_composites_fit_image_layer_when_available() -> Result<()> {
+        if !probe_gpu_backend().available {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let image_path = media.join("blue.png");
+        RgbaImage::from_pixel(2, 4, Rgba([0, 0, 255, 255])).save(&image_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 12;
+        project.settings.height = 12;
+        project.assets = vec![Asset {
+            id: "blue".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/blue.png"),
+        }];
+        let mut layer = image_test_layer("gpu-image", "blue", 1, 2.0, 2.0);
+        layer.transform.width = 8.0;
+        layer.transform.height = 8.0;
+        if let LayerContent::Image(content) = &mut layer.content {
+            content.fit = Some(FitMode::Contain);
+        }
+        project.tracks[0].layers = vec![layer];
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_gpu_hybrid(&project, &options, 0.5)?;
+
+        assert_eq!(frame.get_pixel(2, 2), &options.background);
+        assert!(
+            frame.get_pixel(5, 6)[2] > 200,
+            "GPU hybrid fit layer が描画されていません: {:?}",
+            frame.get_pixel(5, 6)
         );
         Ok(())
     }
