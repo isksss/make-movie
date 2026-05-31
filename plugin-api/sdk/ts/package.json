@@ -1,15 +1,37 @@
 {
   "name": "mm-sdk-ts",
   "version": "0.1.0",
+  "description": "TypeScript SDK for make-movie plugins",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isksss/make-movie.git",
+    "directory": "plugin-api/sdk/ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc --declaration --emitDeclarationOnly",
-    "test": "tsc --noEmit"
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test && npm run build",
+    "test": "tsc --noEmit -p tsconfig.test.json"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }
