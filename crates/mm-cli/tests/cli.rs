@@ -71,6 +71,17 @@ fn validate_command_accepts_valid_project() {
 }
 
 #[test]
+fn validate_command_accepts_rich_shorts_example() {
+    let mut command = Command::cargo_bin("mm").unwrap();
+    command
+        .arg("validate")
+        .arg("--project")
+        .arg(repo_root().join("examples/shorts-rich/mm.toml"))
+        .assert()
+        .success();
+}
+
+#[test]
 fn validate_command_outputs_english_with_lang() {
     let dir = tempfile::tempdir().unwrap();
     write_valid_project(dir.path());
@@ -490,6 +501,14 @@ fn tar_gz_entries(path: &Path) -> Vec<String> {
         .collect::<Vec<_>>();
     entries.sort();
     entries
+}
+
+fn repo_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("mm-cli は crates/mm-cli 配下にある")
+        .to_path_buf()
 }
 
 fn write_valid_project(root: &Path) {
