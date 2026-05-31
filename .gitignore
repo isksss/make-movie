@@ -1,6 +1,7 @@
 /target/
 **/target/
 node_modules/
+.pnpm-store/
 dist/
 .vite/
 *.log

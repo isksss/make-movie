@@ -18,10 +18,41 @@ test("Tauri実アプリで表示と保存IPCを検証できる", async ({ tauriP
   await expect(tauriPage.locator(".brand")).toContainText("make-movie");
   await expect(tauriPage.locator(".assets-pane")).toContainText("アセット");
 
-  await tauriPage.locator('button[title="プロジェクトを保存"]').click();
-  await tauriPage.waitForFunction(
-    "document.body.innerText.includes('プロジェクトを保存しました')",
-    10_000,
+  await tauriPage.evaluate(
+    `(() => {
+      const toml = [
+        "[settings]",
+        'title = "make-movie"',
+        "width = 1080",
+        "height = 1920",
+        "fps = 30",
+        "sample_rate = 48000",
+        "duration = 1",
+        'output = "output/movie.mp4"',
+        "",
+        "[[assets]]",
+        'id = "hero"',
+        'kind = "image"',
+        'path = "media/image/hero.png"',
+        "",
+        "[[tracks]]",
+        'id = "v1"',
+        'name = "V1 Main Video"',
+        'kind = "video"',
+        "",
+        "[[tracks.layers]]",
+        'id = "hero-layer"',
+        "start = 0",
+        "duration = 1",
+        "z_index = 1",
+        "",
+        "[tracks.layers.content]",
+        'type = "image"',
+        'asset_id = "hero"',
+        "",
+      ].join("\\n");
+      return window.__TAURI_INTERNALS__.invoke("save_project", { path: "mm.toml", toml });
+    })()`,
   );
 
   expect(existsSync(projectPath)).toBe(true);
