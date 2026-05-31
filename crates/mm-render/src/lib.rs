@@ -8,9 +8,9 @@ use mm_core::{
     Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
 use skia_safe::{
-    gradient, image::CachingHint, images, paint, surfaces, utils::text_utils, AlphaType, BlurStyle,
-    Color, Color4f, ColorType, Data, Font as SkiaFont, FontMgr, FontStyle, ImageInfo, MaskFilter,
-    Paint, PathBuilder, RRect, Rect, TileMode,
+    gradient, image::CachingHint, image_filters, images, paint, surfaces, utils::text_utils,
+    AlphaType, BlurStyle, Color, Color4f, ColorType, Data, Font as SkiaFont, FontMgr, FontStyle,
+    ImageInfo, MaskFilter, Paint, PathBuilder, RRect, Rect, TileMode,
 };
 use std::env;
 use std::fs;
@@ -913,7 +913,7 @@ impl SkiaFrameRenderer {
             image,
             resolve_layer_crop(layer, content.crop, time - layer.start),
         );
-        let image = apply_image_effects(image, &layer.effects);
+        let image = apply_image_effects_except_skia_native(image, &layer.effects);
         let (image, x, y) = prepare_image_for_transform(&image, transform, content.fit);
 
         canvas.save();
@@ -925,7 +925,14 @@ impl SkiaFrameRenderer {
             image.width(),
             image.height(),
         );
-        self.draw_rgba_image_at(canvas, &image, x, y, transform.opacity)?;
+        self.draw_rgba_image_at_with_effects(
+            canvas,
+            &image,
+            x,
+            y,
+            transform.opacity,
+            &layer.effects,
+        )?;
         canvas.restore();
         Ok(())
     }
@@ -1091,6 +1098,18 @@ impl SkiaFrameRenderer {
         y: i32,
         opacity: f32,
     ) -> Result<()> {
+        self.draw_rgba_image_at_with_effects(canvas, image, x, y, opacity, &[])
+    }
+
+    fn draw_rgba_image_at_with_effects(
+        &self,
+        canvas: &skia_safe::Canvas,
+        image: &RgbaImage,
+        x: i32,
+        y: i32,
+        opacity: f32,
+        effects: &[Effect],
+    ) -> Result<()> {
         let info = ImageInfo::new(
             (image.width() as i32, image.height() as i32),
             ColorType::RGBA8888,
@@ -1100,8 +1119,7 @@ impl SkiaFrameRenderer {
         let data = Data::new_copy(image.as_raw());
         let image = images::raster_from_data(&info, data, (image.width() * 4) as usize)
             .context("Skia image を RgbaImage から作成できません")?;
-        let mut paint = Paint::default();
-        paint.set_alpha_f(opacity.clamp(0.0, 1.0));
+        let paint = skia_image_paint(opacity, effects);
         canvas.draw_image(image, (x, y), Some(&paint));
         Ok(())
     }
@@ -1457,6 +1475,31 @@ fn skia_text_fill_paint(text: &TextLayer, transform: Transform, fallback: Rgba<u
 
 fn skia_color(color: Rgba<u8>) -> Color {
     Color::from_argb(color[3], color[0], color[1], color[2])
+}
+
+fn skia_image_paint(opacity: f32, effects: &[Effect]) -> Paint {
+    let mut paint = Paint::default();
+    paint.set_alpha_f(opacity.clamp(0.0, 1.0));
+    if let Some(radius) = skia_native_blur_radius(effects) {
+        paint.set_image_filter(image_filters::blur(
+            (radius, radius),
+            TileMode::Decal,
+            None,
+            None,
+        ));
+    }
+    paint
+}
+
+fn skia_native_blur_radius(effects: &[Effect]) -> Option<f32> {
+    let radius = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Blur { radius } if *radius > 0.0 => Some(*radius),
+            _ => None,
+        })
+        .sum::<f32>();
+    (radius > 0.0).then_some(radius)
 }
 
 fn apply_transition_to_frame(frame: &mut RgbaImage, layer: &Layer, local_time: f64) {
@@ -1823,6 +1866,27 @@ fn apply_image_effects(mut image: RgbaImage, effects: &[Effect]) -> RgbaImage {
     for effect in effects {
         image = match *effect {
             Effect::Blur { radius } if radius > 0.0 => imageops::blur(&image, radius),
+            Effect::Brightness { amount } => imageops::brighten(&image, (amount * 255.0) as i32),
+            Effect::Contrast { amount } => imageops::contrast(&image, amount),
+            Effect::Saturation { amount } => adjust_saturation(&image, amount),
+            Effect::Pixelate { size } if size > 1 => pixelate(&image, size),
+            Effect::MotionBlur { amount } if amount > 0.0 => motion_blur(&image, amount),
+            Effect::FadeIn { .. }
+            | Effect::FadeOut { .. }
+            | Effect::Blur { .. }
+            | Effect::Zoom { .. }
+            | Effect::Slide { .. }
+            | Effect::Pixelate { .. }
+            | Effect::MotionBlur { .. } => image,
+        };
+    }
+    image
+}
+
+fn apply_image_effects_except_skia_native(mut image: RgbaImage, effects: &[Effect]) -> RgbaImage {
+    for effect in effects {
+        image = match *effect {
+            Effect::Blur { radius } if radius > 0.0 => image,
             Effect::Brightness { amount } => imageops::brighten(&image, (amount * 255.0) as i32),
             Effect::Contrast { amount } => imageops::contrast(&image, amount),
             Effect::Saturation { amount } => adjust_saturation(&image, amount),
@@ -3017,6 +3081,49 @@ mod tests {
             assert_eq!(frame.get_pixel(2, 2), &options.background);
             assert_eq!(frame.get_pixel(12, 8), &Rgba([0, 255, 0, 255]));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_applies_image_blur_with_native_filter() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let image_path = media.join("edge.png");
+        let mut image = RgbaImage::from_pixel(32, 16, Rgba([0, 0, 0, 255]));
+        for y in 0..16 {
+            for x in 0..16 {
+                image.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+            }
+        }
+        image.save(&image_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 48;
+        project.settings.height = 24;
+        project.assets = vec![Asset {
+            id: "edge".to_string(),
+            kind: AssetKind::Image,
+            path: PathBuf::from("media/image/edge.png"),
+        }];
+        let mut layer = image_test_layer("blurred", "edge", 1, 8.0, 4.0);
+        layer.transform.width = 32.0;
+        layer.transform.height = 16.0;
+        layer.effects = vec![Effect::Blur { radius: 3.0 }];
+        project.tracks[0].layers = vec![layer];
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([20, 20, 20, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert!(skia_image_paint(1.0, &[Effect::Blur { radius: 3.0 }])
+            .image_filter()
+            .is_some());
+        assert!(has_non_background_pixel(&frame, options.background));
+        assert!(
+            frame.pixels().any(|pixel| pixel[0] > 40 && pixel[0] < 240),
+            "blur による中間色の pixel がありません"
+        );
         Ok(())
     }
 
