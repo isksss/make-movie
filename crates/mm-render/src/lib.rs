@@ -8,8 +8,9 @@ use mm_core::{
     Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
 use skia_safe::{
-    image::CachingHint, images, surfaces, utils::text_utils, AlphaType, Color, ColorType, Data,
-    Font as SkiaFont, FontMgr, FontStyle, ImageInfo, Paint, PathBuilder, RRect, Rect,
+    image::CachingHint, images, paint, surfaces, utils::text_utils, AlphaType, BlurStyle, Color,
+    ColorType, Data, Font as SkiaFont, FontMgr, FontStyle, ImageInfo, MaskFilter, Paint,
+    PathBuilder, RRect, Rect,
 };
 use std::env;
 use std::fs;
@@ -940,10 +941,7 @@ impl SkiaFrameRenderer {
             .context("Skia default typeface を取得できません")?;
         let font_size = text.font_size * transform.scale.max(0.01);
         let font = SkiaFont::new(typeface, font_size);
-        let mut paint = Paint::default();
         let color = parse_color(&text.color).unwrap_or(Rgba([255, 255, 255, 255]));
-        paint.set_color(Color::from_argb(color[3], color[0], color[1], color[2]));
-        paint.set_alpha_f(transform.opacity.clamp(0.0, 1.0));
         let line_height = font_size * text.line_spacing.max(0.1);
         let baseline_y = transform.y + font_size;
         let align = match text.align {
@@ -952,11 +950,77 @@ impl SkiaFrameRenderer {
             TextAlign::Right => text_utils::Align::Right,
         };
 
+        if let Some(shadow) = &text.shadow {
+            let shadow_color = parse_color(&shadow.color).unwrap_or(Rgba([0, 0, 0, 180]));
+            let mut shadow_paint = skia_text_paint(shadow_color, transform.opacity);
+            if shadow.blur > 0.0 {
+                shadow_paint.set_mask_filter(MaskFilter::blur(
+                    BlurStyle::Normal,
+                    shadow.blur.max(0.0),
+                    true,
+                ));
+            }
+            self.draw_text_lines(
+                canvas,
+                text,
+                &font,
+                &shadow_paint,
+                align,
+                transform.x + shadow.offset_x,
+                baseline_y + shadow.offset_y,
+                line_height,
+            );
+        }
+
+        if let Some(stroke) = &text.stroke {
+            if stroke.width > 0.0 {
+                let stroke_color = parse_color(&stroke.color).unwrap_or(Rgba([0, 0, 0, 255]));
+                let mut stroke_paint = skia_text_paint(stroke_color, transform.opacity);
+                stroke_paint.set_style(paint::Style::Stroke);
+                stroke_paint.set_stroke_width(stroke.width * transform.scale.max(0.01));
+                self.draw_text_lines(
+                    canvas,
+                    text,
+                    &font,
+                    &stroke_paint,
+                    align,
+                    transform.x,
+                    baseline_y,
+                    line_height,
+                );
+            }
+        }
+
+        let fill_paint = skia_text_paint(color, transform.opacity);
+        self.draw_text_lines(
+            canvas,
+            text,
+            &font,
+            &fill_paint,
+            align,
+            transform.x,
+            baseline_y,
+            line_height,
+        );
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_text_lines(
+        &self,
+        canvas: &skia_safe::Canvas,
+        text: &TextLayer,
+        font: &SkiaFont,
+        paint: &Paint,
+        align: text_utils::Align,
+        x: f32,
+        baseline_y: f32,
+        line_height: f32,
+    ) {
         for (line_index, line) in text.text.lines().enumerate() {
             let y = baseline_y + line_index as f32 * line_height;
-            canvas.draw_str_align(line, (transform.x, y), &font, &paint, align);
+            canvas.draw_str_align(line, (x, y), font, paint, align);
         }
-        Ok(())
     }
 
     fn surface(&self, width: u32, height: u32, color: Rgba<u8>) -> Result<skia_safe::Surface> {
@@ -1300,11 +1364,16 @@ fn draw_layer_content(
 
 fn is_skia_native_text_supported(text: &TextLayer, transform: Transform) -> bool {
     text.font_asset_id.is_none()
-        && text.stroke.is_none()
-        && text.shadow.is_none()
         && text.gradient.is_none()
         && text.letter_spacing == 0.0
         && transform.rotation == 0.0
+}
+
+fn skia_text_paint(color: Rgba<u8>, opacity: f32) -> Paint {
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_argb(color[3], color[0], color[1], color[2]));
+    paint.set_alpha_f((f32::from(color[3]) / 255.0) * opacity.clamp(0.0, 1.0));
+    paint
 }
 
 fn apply_transition_to_frame(frame: &mut RgbaImage, layer: &Layer, local_time: f64) {
@@ -2900,6 +2969,66 @@ mod tests {
         let frame = render_frame_skia(&project, &options, 0.5)?;
 
         assert!(frame.pixels().any(|pixel| pixel[1] > 120 && pixel[3] > 0));
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_draws_text_stroke_and_shadow_with_native_text() -> Result<()> {
+        let mut project = text_project();
+        project.settings.width = 220;
+        project.settings.height = 100;
+        let LayerContent::Text(text) = &mut project.tracks[0].layers[0].content else {
+            panic!("text layer ではありません");
+        };
+        text.text = "Skia".to_string();
+        text.font_size = 34.0;
+        text.color = "#00ff00".to_string();
+        text.align = TextAlign::Left;
+        text.stroke = Some(TextStroke {
+            color: "#ff0000".to_string(),
+            width: 3.0,
+        });
+        text.shadow = Some(TextShadow {
+            color: "#0000ff".to_string(),
+            offset_x: 10.0,
+            offset_y: 8.0,
+            blur: 0.0,
+        });
+        text.gradient = None;
+        text.font_asset_id = None;
+        text.letter_spacing = 0.0;
+        project.tracks[0].layers[0].transform = Transform {
+            x: 18.0,
+            y: 12.0,
+            width: 160.0,
+            height: 48.0,
+            scale: 1.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        };
+        let mut options = RenderOptions::new(".", "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[0] > 150 && pixel[1] < 100 && pixel[2] < 100),
+            "stroke の赤い pixel がありません"
+        );
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[1] > 150 && pixel[0] < 120 && pixel[2] < 120),
+            "fill の緑の pixel がありません"
+        );
+        assert!(
+            frame
+                .pixels()
+                .any(|pixel| pixel[2] > 150 && pixel[0] < 120 && pixel[1] < 120),
+            "shadow の青い pixel がありません"
+        );
         Ok(())
     }
 
