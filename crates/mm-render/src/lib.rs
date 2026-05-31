@@ -7,7 +7,9 @@ use mm_core::{
     Project, SubtitleLayer, SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke,
     Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
-use skia_safe::{image::CachingHint, surfaces, AlphaType, Color, ColorType, ImageInfo};
+use skia_safe::{
+    image::CachingHint, images, surfaces, AlphaType, Color, ColorType, Data, ImageInfo, Paint,
+};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -674,12 +676,7 @@ fn render_frame_for_encode(
             render_frame_skia_with_renderer(project, options, time, renderer)
         }
         (ActiveRenderBackend::Skia(renderer), RawFrameMode::TransparentOverlay) => {
-            let frame = renderer.background_frame(
-                project.settings.width,
-                project.settings.height,
-                Rgba([0, 0, 0, 0]),
-            )?;
-            render_frame_on_base(project, options, time, frame, false)
+            renderer.render_frame(project, options, time, Rgba([0, 0, 0, 0]), false)
         }
         (ActiveRenderBackend::GpuHybrid(renderer), RawFrameMode::FullFrame) => {
             render_frame_gpu_hybrid_with_renderer(project, options, time, renderer)
@@ -741,12 +738,7 @@ fn render_frame_skia_with_renderer(
     time: f64,
     renderer: &SkiaFrameRenderer,
 ) -> Result<RgbaImage> {
-    let frame = renderer.background_frame(
-        project.settings.width,
-        project.settings.height,
-        options.background,
-    )?;
-    render_frame_on_base(project, options, time, frame, true)
+    renderer.render_frame(project, options, time, options.background, true)
 }
 
 fn render_frame_gpu_hybrid_with_renderer(
@@ -803,6 +795,45 @@ impl SkiaFrameRenderer {
     }
 
     pub fn background_frame(&self, width: u32, height: u32, color: Rgba<u8>) -> Result<RgbaImage> {
+        let mut surface = self.surface(width, height, color)?;
+        self.read_surface(&mut surface, width, height)
+    }
+
+    fn render_frame(
+        &self,
+        project: &Project,
+        options: &RenderOptions,
+        time: f64,
+        background: Rgba<u8>,
+        include_video_layers: bool,
+    ) -> Result<RgbaImage> {
+        let width = project.settings.width;
+        let height = project.settings.height;
+        let mut surface = self.surface(width, height, background)?;
+        let mut layers = project
+            .tracks
+            .iter()
+            .flat_map(|track| track.layers.iter())
+            .filter(|layer| layer.start <= time && time < layer.start + layer.duration)
+            .filter(|layer| {
+                include_video_layers || !matches!(layer.content, LayerContent::Video(_))
+            })
+            .collect::<Vec<_>>();
+        layers.sort_by_key(|layer| layer.z_index);
+
+        for layer in layers {
+            let local_time = time - layer.start;
+            let transform = resolve_layer_transform(layer, local_time);
+            let mut layer_frame = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 0]));
+            draw_layer_content(project, options, &mut layer_frame, layer, transform, time)?;
+            apply_transition_to_frame(&mut layer_frame, layer, local_time);
+            self.draw_rgba_image(surface.canvas(), &layer_frame)?;
+        }
+
+        self.read_surface(&mut surface, width, height)
+    }
+
+    fn surface(&self, width: u32, height: u32, color: Rgba<u8>) -> Result<skia_safe::Surface> {
         if width == 0 || height == 0 {
             bail!("Skia frame size は 1px 以上である必要があります");
         }
@@ -811,6 +842,30 @@ impl SkiaFrameRenderer {
         surface
             .canvas()
             .clear(Color::from_argb(color[3], color[0], color[1], color[2]));
+        Ok(surface)
+    }
+
+    fn draw_rgba_image(&self, canvas: &skia_safe::Canvas, image: &RgbaImage) -> Result<()> {
+        let info = ImageInfo::new(
+            (image.width() as i32, image.height() as i32),
+            ColorType::RGBA8888,
+            AlphaType::Unpremul,
+            None,
+        );
+        let data = Data::new_copy(image.as_raw());
+        let image = images::raster_from_data(&info, data, (image.width() * 4) as usize)
+            .context("Skia image を RgbaImage から作成できません")?;
+        let paint = Paint::default();
+        canvas.draw_image(image, (0, 0), Some(&paint));
+        Ok(())
+    }
+
+    fn read_surface(
+        &self,
+        surface: &mut skia_safe::Surface,
+        width: u32,
+        height: u32,
+    ) -> Result<RgbaImage> {
         let image = surface.image_snapshot();
         let info = ImageInfo::new(
             (width as i32, height as i32),
@@ -2550,6 +2605,73 @@ mod tests {
         assert_eq!(frame.get_pixel(0, 0), &options.background);
         assert!(has_non_background_pixel(&frame, options.background));
         Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_composites_layers_in_z_order() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let media = dir.path().join("media/image");
+        fs::create_dir_all(&media)?;
+        let red_path = media.join("red.png");
+        let blue_path = media.join("blue.png");
+        RgbaImage::from_pixel(16, 16, Rgba([255, 0, 0, 255])).save(&red_path)?;
+        RgbaImage::from_pixel(16, 16, Rgba([0, 0, 255, 255])).save(&blue_path)?;
+
+        let mut project = text_project();
+        project.settings.width = 32;
+        project.settings.height = 32;
+        project.assets = vec![
+            Asset {
+                id: "red".to_string(),
+                kind: AssetKind::Image,
+                path: PathBuf::from("media/image/red.png"),
+            },
+            Asset {
+                id: "blue".to_string(),
+                kind: AssetKind::Image,
+                path: PathBuf::from("media/image/blue.png"),
+            },
+        ];
+        project.tracks[0].layers = vec![
+            image_test_layer("red-layer", "red", 1, 0.0, 0.0),
+            image_test_layer("blue-layer", "blue", 2, 8.0, 8.0),
+        ];
+        let mut options = RenderOptions::new(dir.path(), "output.mp4");
+        options.background = Rgba([0, 0, 0, 255]);
+
+        let frame = render_frame_skia(&project, &options, 0.5)?;
+
+        assert_eq!(frame.get_pixel(4, 4), &Rgba([255, 0, 0, 255]));
+        assert_eq!(frame.get_pixel(12, 12), &Rgba([0, 0, 255, 255]));
+        Ok(())
+    }
+
+    fn image_test_layer(id: &str, asset_id: &str, z_index: i32, x: f32, y: f32) -> Layer {
+        Layer {
+            id: id.to_string(),
+            group_id: None,
+            start: 0.0,
+            duration: 1.0,
+            z_index,
+            content: LayerContent::Image(ImageLayer {
+                asset_id: asset_id.to_string(),
+                crop: None,
+                mask: None,
+                fit: None,
+            }),
+            transform: Transform {
+                x,
+                y,
+                width: 16.0,
+                height: 16.0,
+                scale: 1.0,
+                rotation: 0.0,
+                opacity: 1.0,
+            },
+            effects: vec![],
+            animations: vec![],
+            transition: None,
+        }
     }
 
     #[test]
