@@ -1191,7 +1191,7 @@ export function App() {
               ) : null}
             </div>
           ) : null}
-          <div className="tts-editor">
+          <div className="external-analysis-editor">
             <label>
               {t.externalAnalysis}
               <textarea
@@ -1217,6 +1217,8 @@ export function App() {
               <Wand2 size={16} />
               <span>{t.applyExternalAnalysis}</span>
             </button>
+          </div>
+          <div className="tts-editor">
             <label>
               {t.provider}
               <select

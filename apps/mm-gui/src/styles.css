@@ -240,6 +240,7 @@
     width: 100%;
   }
 
+  .external-analysis-editor,
   .property-grid,
   .tts-editor {
     display: grid;
