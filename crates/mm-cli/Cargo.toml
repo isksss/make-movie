@@ -12,9 +12,11 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+flate2.workspace = true
 mm-core = { path = "../mm-core" }
 mm-plugin-runtime = { path = "../mm-plugin-runtime" }
 mm-render = { path = "../mm-render" }
+tar.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2"

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
+use flate2::{write::GzEncoder, Compression};
 use mm_core::{load_project, validate_project};
 use mm_plugin_runtime::{
     default_global_config_path, default_plugin_dir, load_manifest, PluginManager, PluginReference,
@@ -9,8 +10,10 @@ use mm_render::{
 };
 use std::env;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use tar::Builder as TarBuilder;
 
 #[derive(Debug, Parser)]
 #[command(name = "mm")]
@@ -34,7 +37,7 @@ enum Command {
     Validate(ProjectArgs),
     Preview(PreviewArgs),
     Cleanup(ProjectRootArgs),
-    Package(ProjectRootArgs),
+    Package(PackageArgs),
     Doctor,
     Plugin {
         #[command(subcommand)]
@@ -85,6 +88,14 @@ impl From<CliRenderBackend> for RenderBackend {
 struct ProjectRootArgs {
     #[arg(long, default_value = ".")]
     project_root: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct PackageArgs {
+    #[arg(long, default_value = ".")]
+    project_root: PathBuf,
+    #[arg(long)]
+    output: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -398,11 +409,115 @@ fn cleanup(args: ProjectRootArgs, messages: Messages) -> Result<()> {
     Ok(())
 }
 
-fn package(args: ProjectRootArgs, messages: Messages) -> Result<()> {
+fn package(args: PackageArgs, messages: Messages) -> Result<()> {
     let project = args.project_root.join("mm.toml");
     let loaded = load_project(&project)?;
     validate_project(&loaded, &args.project_root)?;
-    println!("{}: {}", messages.package_done, args.project_root.display());
+    let output = args
+        .output
+        .unwrap_or_else(|| default_package_output(&args.project_root, &loaded.settings.title));
+    create_project_package(&args.project_root, &output)?;
+    println!("{}: {}", messages.package_done, output.display());
+    Ok(())
+}
+
+fn default_package_output(project_root: &Path, title: &str) -> PathBuf {
+    project_root
+        .join("output")
+        .join(format!("{}.tar.gz", package_file_stem(title)))
+}
+
+fn package_file_stem(title: &str) -> String {
+    let stem = title
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if stem.is_empty() {
+        "project".to_string()
+    } else {
+        stem
+    }
+}
+
+fn create_project_package(project_root: &Path, output: &Path) -> Result<()> {
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "package 出力先ディレクトリを作成できません: {}",
+                parent.display()
+            )
+        })?;
+    }
+    let file = fs::File::create(output)
+        .with_context(|| format!("package を作成できません: {}", output.display()))?;
+    let output_path = output.canonicalize().ok();
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut archive = TarBuilder::new(encoder);
+    append_package_file(&mut archive, project_root, "mm.toml")?;
+    if project_root.join("mm.lock").is_file() {
+        append_package_file(&mut archive, project_root, "mm.lock")?;
+    }
+    let media = project_root.join("media");
+    if media.is_dir() {
+        append_package_dir(&mut archive, project_root, &media, output_path.as_deref())?;
+    }
+    archive
+        .into_inner()
+        .context("package archive を完了できません")?
+        .finish()
+        .context("package gzip stream を完了できません")?;
+    Ok(())
+}
+
+fn append_package_file(
+    archive: &mut TarBuilder<GzEncoder<fs::File>>,
+    project_root: &Path,
+    relative: &str,
+) -> Result<()> {
+    let path = project_root.join(relative);
+    archive
+        .append_path_with_name(&path, relative)
+        .with_context(|| format!("package に追加できません: {}", path.display()))
+}
+
+fn append_package_dir(
+    archive: &mut TarBuilder<GzEncoder<fs::File>>,
+    project_root: &Path,
+    dir: &Path,
+    output_path: Option<&Path>,
+) -> Result<()> {
+    let mut entries = fs::read_dir(dir)
+        .with_context(|| format!("package 対象ディレクトリを読めません: {}", dir.display()))?
+        .collect::<io::Result<Vec<_>>>()
+        .with_context(|| format!("package 対象ディレクトリを読めません: {}", dir.display()))?;
+    entries.sort_by_key(|entry| entry.path());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            append_package_dir(archive, project_root, &path, output_path)?;
+        } else if path.is_file() {
+            if output_path.is_some_and(|output_path| {
+                path.canonicalize()
+                    .is_ok_and(|candidate| candidate == output_path)
+            }) {
+                continue;
+            }
+            let relative = path
+                .strip_prefix(project_root)
+                .with_context(|| format!("package 相対pathを解決できません: {}", path.display()))?;
+            archive
+                .append_path_with_name(&path, relative)
+                .with_context(|| format!("package に追加できません: {}", path.display()))?;
+        }
+    }
     Ok(())
 }
 
@@ -471,7 +586,7 @@ impl Messages {
                 validate_done: "validate が完了しました",
                 preview_done: "preview を出力しました",
                 cleanup_done: "cleanup が完了しました",
-                package_done: "package の検証が完了しました",
+                package_done: "package を作成しました",
                 not_found: "未検出",
             },
             CliLanguage::En => Self {
@@ -479,7 +594,7 @@ impl Messages {
                 validate_done: "validate completed",
                 preview_done: "preview exported",
                 cleanup_done: "cleanup completed",
-                package_done: "package validation completed",
+                package_done: "package created",
                 not_found: "not found",
             },
         }
@@ -610,21 +725,23 @@ Options:
   -h, --help                       Print help
 "#;
 
-const PACKAGE_HELP_JA: &str = r#"配布前のプロジェクト検証を行う
+const PACKAGE_HELP_JA: &str = r#"配布用プロジェクトアーカイブを生成する
 
 使用方法: mm package [オプション]
 
 オプション:
       --project-root <PROJECT_ROOT>  project root [既定値: .]
+      --output <OUTPUT>              出力先 .tar.gz
   -h, --help                       ヘルプを表示する
 "#;
 
-const PACKAGE_HELP_EN: &str = r#"Validate a project before packaging
+const PACKAGE_HELP_EN: &str = r#"Create a distributable project archive
 
 Usage: mm package [OPTIONS]
 
 Options:
       --project-root <PROJECT_ROOT>  Project root [default: .]
+      --output <OUTPUT>              Output .tar.gz
   -h, --help                       Print help
 "#;
 

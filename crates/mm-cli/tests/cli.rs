@@ -1,6 +1,8 @@
 use assert_cmd::Command;
+use flate2::read::GzDecoder;
 use std::fs;
 use std::path::Path;
+use tar::Archive;
 
 #[test]
 fn doctor_command_succeeds() {
@@ -309,6 +311,93 @@ fn preview_command_writes_png_frame() {
 
     let bytes = fs::read(output).unwrap();
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+}
+
+#[test]
+fn package_command_writes_project_archive() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project(dir.path());
+    fs::write(dir.path().join("mm.lock"), "[[plugin]]\nname = \"theme\"\n").unwrap();
+    fs::create_dir_all(dir.path().join("cache")).unwrap();
+    fs::write(dir.path().join("cache/skip.tmp"), "skip").unwrap();
+    fs::create_dir_all(dir.path().join("output")).unwrap();
+    fs::write(dir.path().join("output/skip.mp4"), "skip").unwrap();
+    let output = dir.path().join("package/project.tar.gz");
+
+    Command::cargo_bin("mm")
+        .unwrap()
+        .arg("package")
+        .arg("--project-root")
+        .arg(dir.path())
+        .arg("--output")
+        .arg(&output)
+        .assert()
+        .success();
+
+    let entries = tar_gz_entries(&output);
+    assert!(entries.iter().any(|entry| entry == "mm.toml"));
+    assert!(entries.iter().any(|entry| entry == "mm.lock"));
+    assert!(entries
+        .iter()
+        .any(|entry| entry == "media/image/sample.png"));
+    assert!(!entries.iter().any(|entry| entry.starts_with("cache/")));
+    assert!(!entries.iter().any(|entry| entry == "output/skip.mp4"));
+}
+
+#[test]
+fn package_command_skips_archive_when_output_is_inside_media() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project(dir.path());
+    let output = dir.path().join("media/package.tar.gz");
+
+    Command::cargo_bin("mm")
+        .unwrap()
+        .arg("package")
+        .arg("--project-root")
+        .arg(dir.path())
+        .arg("--output")
+        .arg(&output)
+        .assert()
+        .success();
+
+    let entries = tar_gz_entries(&output);
+    assert!(!entries.iter().any(|entry| entry == "media/package.tar.gz"));
+}
+
+#[test]
+fn package_command_uses_default_output() {
+    let dir = tempfile::tempdir().unwrap();
+    write_valid_project(dir.path());
+
+    Command::cargo_bin("mm")
+        .unwrap()
+        .arg("package")
+        .arg("--project-root")
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    assert!(dir.path().join("output/cli.tar.gz").exists());
+}
+
+fn tar_gz_entries(path: &Path) -> Vec<String> {
+    let file = fs::File::open(path).unwrap();
+    let decoder = GzDecoder::new(file);
+    let mut archive = Archive::new(decoder);
+    let mut entries = archive
+        .entries()
+        .unwrap()
+        .map(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries
 }
 
 fn write_valid_project(root: &Path) {
