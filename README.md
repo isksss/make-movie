@@ -47,3 +47,13 @@ examples/
 初期実装順は Project、Asset、Timeline、Renderer、CLI、GUI、Plugin Runtime です。
 
 詳細は [PLANS.md](PLANS.md) と [docs/architecture.md](docs/architecture.md) を参照してください。
+
+## 開発環境
+
+ランタイムは repository root の `.mise.toml` を正とします。
+
+```bash
+mise install
+```
+
+標準 Node.js は 26 系、pnpm は `10.24.0` です。
