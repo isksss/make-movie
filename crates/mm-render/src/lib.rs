@@ -1,16 +1,16 @@
-use ab_glyph::{point, Font, FontArc, GlyphId, PxScale, ScaleFont};
-use anyhow::{bail, Context, Result};
-use image::{imageops, Rgba, RgbaImage};
+use ab_glyph::{Font, FontArc, GlyphId, PxScale, ScaleFont, point};
+use anyhow::{Context, Result, bail};
+use image::{Rgba, RgbaImage, imageops};
 use mm_core::{
-    save_wav_audio, synthesize_with_default_provider, AnimatedProperty, Animation, AssetKind,
-    AudioLayer, Crop, Easing, Effect, FitMode, GradientDirection, ImageLayer, Layer, LayerContent,
-    Mask, Project, SubtitleLayer, SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke,
-    Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
+    AnimatedProperty, Animation, AssetKind, AudioLayer, Crop, Easing, Effect, FitMode,
+    GradientDirection, ImageLayer, Layer, LayerContent, Mask, Project, SubtitleLayer,
+    SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke, Transform, Transition,
+    VideoLayer, VoiceLayer, WipeShape, save_wav_audio, synthesize_with_default_provider,
 };
 use skia_safe::{
-    color_filters, gradient, image::CachingHint, image_filters, images, paint, surfaces,
-    utils::text_utils, AlphaType, BlurStyle, Color, Color4f, ColorType, Data, Font as SkiaFont,
-    FontMgr, FontStyle, ImageInfo, MaskFilter, Paint, PathBuilder, RRect, Rect, TileMode, Typeface,
+    AlphaType, BlurStyle, Color, Color4f, ColorType, Data, Font as SkiaFont, FontMgr, FontStyle,
+    ImageInfo, MaskFilter, Paint, PathBuilder, RRect, Rect, TileMode, Typeface, color_filters,
+    gradient, image::CachingHint, image_filters, images, paint, surfaces, utils::text_utils,
 };
 use std::env;
 use std::fs;
@@ -621,10 +621,10 @@ fn decode_video_layer_frame(
 ) -> Result<RgbaImage> {
     let trim_start = content.trim_start.unwrap_or(0.0).max(0.0);
     let source_time = trim_start + local_time.max(0.0);
-    if let Some(trim_end) = content.trim_end {
-        if source_time >= trim_end {
-            return Ok(RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 0])));
-        }
+    if let Some(trim_end) = content.trim_end
+        && source_time >= trim_end
+    {
+        return Ok(RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 0])));
     }
 
     let path = asset_path(project, options, &content.asset_id, AssetKind::Video)?;
@@ -1005,23 +1005,23 @@ impl SkiaFrameRenderer {
             );
         }
 
-        if let Some(stroke) = &text.stroke {
-            if stroke.width > 0.0 {
-                let stroke_color = parse_color(&stroke.color).unwrap_or(Rgba([0, 0, 0, 255]));
-                let mut stroke_paint = skia_text_paint(stroke_color, transform.opacity);
-                stroke_paint.set_style(paint::Style::Stroke);
-                stroke_paint.set_stroke_width(stroke.width * transform.scale.max(0.01));
-                self.draw_text_lines(
-                    canvas,
-                    text,
-                    &font,
-                    &stroke_paint,
-                    align,
-                    transform.x,
-                    baseline_y,
-                    line_height,
-                );
-            }
+        if let Some(stroke) = &text.stroke
+            && stroke.width > 0.0
+        {
+            let stroke_color = parse_color(&stroke.color).unwrap_or(Rgba([0, 0, 0, 255]));
+            let mut stroke_paint = skia_text_paint(stroke_color, transform.opacity);
+            stroke_paint.set_style(paint::Style::Stroke);
+            stroke_paint.set_stroke_width(stroke.width * transform.scale.max(0.01));
+            self.draw_text_lines(
+                canvas,
+                text,
+                &font,
+                &stroke_paint,
+                align,
+                transform.x,
+                baseline_y,
+                line_height,
+            );
         }
 
         let fill_paint = skia_text_fill_paint(text, transform, color);
@@ -1740,10 +1740,11 @@ fn apply_rounded_rect_wipe(
             pixel[3] = 0;
             continue;
         }
-        if let Some(color) = border_color {
-            if border_width > 0.0 && -distance <= border_width {
-                *pixel = color;
-            }
+        if let Some(color) = border_color
+            && border_width > 0.0
+            && -distance <= border_width
+        {
+            *pixel = color;
         }
     }
 }
@@ -2995,7 +2996,15 @@ mod tests {
     };
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::{Mutex, OnceLock};
     use std::thread;
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned")
+    }
 
     #[test]
     fn system_font_path_prefers_hackgen_when_available() {
@@ -3247,9 +3256,11 @@ mod tests {
 
         let frame = render_frame_skia(&project, &options, 0.5)?;
 
-        assert!(skia_image_paint(1.0, &[Effect::Blur { radius: 3.0 }])
-            .image_filter()
-            .is_some());
+        assert!(
+            skia_image_paint(1.0, &[Effect::Blur { radius: 3.0 }])
+                .image_filter()
+                .is_some()
+        );
         assert!(has_non_background_pixel(&frame, options.background));
         assert!(
             frame.pixels().any(|pixel| pixel[0] > 40 && pixel[0] < 240),
@@ -3287,9 +3298,11 @@ mod tests {
 
         let frame = render_frame_skia(&project, &options, 0.5)?;
 
-        assert!(skia_image_paint(1.0, &[Effect::Brightness { amount: 0.4 }])
-            .color_filter()
-            .is_some());
+        assert!(
+            skia_image_paint(1.0, &[Effect::Brightness { amount: 0.4 }])
+                .color_filter()
+                .is_some()
+        );
         assert!(
             frame.get_pixel(12, 12)[0] > 80,
             "brightness による明るい pixel がありません"
@@ -3327,9 +3340,11 @@ mod tests {
         let frame = render_frame_skia(&project, &options, 0.5)?;
         let pixel = frame.get_pixel(12, 12);
 
-        assert!(skia_image_paint(1.0, &[Effect::Saturation { amount: 0.0 }])
-            .color_filter()
-            .is_some());
+        assert!(
+            skia_image_paint(1.0, &[Effect::Saturation { amount: 0.0 }])
+                .color_filter()
+                .is_some()
+        );
         assert!(
             (i16::from(pixel[0]) - i16::from(pixel[1])).abs() <= 2
                 && (i16::from(pixel[1]) - i16::from(pixel[2])).abs() <= 2,
@@ -3374,9 +3389,11 @@ mod tests {
 
         let frame = render_frame_skia(&project, &options, 0.5)?;
 
-        assert!(skia_image_paint(1.0, &[Effect::Contrast { amount: 50.0 }])
-            .color_filter()
-            .is_some());
+        assert!(
+            skia_image_paint(1.0, &[Effect::Contrast { amount: 50.0 }])
+                .color_filter()
+                .is_some()
+        );
         assert!(
             frame.get_pixel(6, 12)[0] < 80,
             "contrast による暗い pixel がありません: {:?}",
@@ -4396,13 +4413,17 @@ mod tests {
 
     #[test]
     fn media_plan_synthesizes_voice_layer_to_cached_wav() -> Result<()> {
+        let _guard = env_lock();
         let dir = tempfile::tempdir()?;
         let endpoint = start_voicevox_mock(mm_core::encode_wav_audio(&mm_core::AudioBuffer {
             sample_rate: 24_000,
             channels: 1,
             samples: vec![0.0, 0.4, -0.4, 0.0],
         }));
-        env::set_var("MM_VOICEVOX_ENDPOINT", endpoint);
+        // SAFETY: This test owns MM_VOICEVOX_ENDPOINT while holding env_lock.
+        unsafe {
+            env::set_var("MM_VOICEVOX_ENDPOINT", endpoint);
+        }
         let project = Project {
             settings: ProjectSettings {
                 title: "音声合成".to_string(),
@@ -4448,12 +4469,17 @@ mod tests {
 
         let plan = MediaPlan::new(&project, &options)?;
 
-        env::remove_var("MM_VOICEVOX_ENDPOINT");
+        // SAFETY: This test owns MM_VOICEVOX_ENDPOINT while holding env_lock.
+        unsafe {
+            env::remove_var("MM_VOICEVOX_ENDPOINT");
+        }
         assert_eq!(plan.audio_layers.len(), 1);
         assert!(plan.audio_layers[0].path.exists());
-        assert!(plan.audio_layers[0]
-            .path
-            .starts_with(dir.path().join("cache/tts")));
+        assert!(
+            plan.audio_layers[0]
+                .path
+                .starts_with(dir.path().join("cache/tts"))
+        );
         assert_eq!(plan.audio_layers[0].start, 0.1);
         assert_eq!(plan.audio_layers[0].trim_start, 0.0);
         assert_eq!(plan.audio_layers[0].trim_end, Some(0.4));

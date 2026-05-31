@@ -65,7 +65,7 @@ cat >"$sdk_root/rust/Cargo.toml" <<'EOF'
 [package]
 name = "mm-sdk-rust"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 repository = "https://github.com/isksss/make-movie"
 

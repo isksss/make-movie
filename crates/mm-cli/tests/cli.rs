@@ -231,9 +231,11 @@ version = "2.0.0"
     let lock = fs::read_to_string(dir.path().join("mm.lock")).unwrap();
     assert!(lock.contains("global-theme"));
     assert!(lock.contains("2.0.0"));
-    assert!(data_home
-        .join("mm/plugins/global-theme/global-theme.wasm")
-        .exists());
+    assert!(
+        data_home
+            .join("mm/plugins/global-theme/global-theme.wasm")
+            .exists()
+    );
 }
 
 #[test]
@@ -355,9 +357,11 @@ fn package_command_writes_project_archive() {
     let entries = tar_gz_entries(&output);
     assert!(entries.iter().any(|entry| entry == "mm.toml"));
     assert!(entries.iter().any(|entry| entry == "mm.lock"));
-    assert!(entries
-        .iter()
-        .any(|entry| entry == "media/image/sample.png"));
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry == "media/image/sample.png")
+    );
     assert!(!entries.iter().any(|entry| entry.starts_with("cache/")));
     assert!(!entries.iter().any(|entry| entry == "output/skip.mp4"));
 }
