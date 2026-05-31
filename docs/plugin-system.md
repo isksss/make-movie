@@ -37,6 +37,8 @@ bash plugin-api/sdk/verify.sh
 
 Rust / TypeScript / Go で Plugin を開発する詳細手順は `docs/plugin-development-rust-ts-go.md` を参照します。
 
+Plugin作成の最小テンプレートは `plugin-api/templates/` を参照します。
+
 ## Manifest / Lock
 
 Plugin manifest と lock の schema は `plugin-api/schema/` に配置します。

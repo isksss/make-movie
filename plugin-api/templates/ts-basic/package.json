@@ -1,0 +1,18 @@
+{
+  "name": "mm-plugin-ts-basic",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "prepare:sdk": "corepack pnpm --dir ../../sdk/ts build",
+    "build": "tsc -p tsconfig.json",
+    "test": "corepack pnpm prepare:sdk && tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "mm-sdk-ts": "file:../../sdk/ts"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

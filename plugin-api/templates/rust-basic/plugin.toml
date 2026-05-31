@@ -1,0 +1,12 @@
+name = "rust-basic"
+version = "0.1.0"
+component = "dist/rust-basic.wasm"
+
+[metadata]
+display_name = "Rust Basic"
+category = "utility"
+description = "Rust plugin template"
+
+[source]
+repository = "local"
+path = "./dist/rust-basic.wasm"
