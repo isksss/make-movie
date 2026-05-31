@@ -1,0 +1,57 @@
+name: Feature
+description: 機能追加・改善の実装チケット
+title: "[Feature]: "
+labels: []
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: このIssueで達成する目的を1つだけ書いてください。
+      placeholder: 例: Rust Plugin SDKにmetadata validationを追加する。
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: 実装で満たす必要がある要件を箇条書きで書いてください。
+      value: |
+        -
+        -
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: 完了判定に使う条件を書いてください。
+      value: |
+        -
+        -
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification Steps
+      description: 実行する検証コマンドや確認手順を書いてください。
+      value: |
+        - [ ] cargo fmt --check
+        - [ ] cargo test
+        - [ ] cargo clippy --workspace --all-targets -- -D warnings
+        - [ ] GUI確認
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: 関連する仕様、docs、PR、Issue、ファイルパスを書いてください。
+      placeholder: |
+        - docs/...
+        - plugin-api/plugin.wit
+    validations:
+      required: false

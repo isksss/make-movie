@@ -1,0 +1,54 @@
+name: Bug
+description: 不具合修正チケット
+title: "[Bug]: "
+labels: []
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: 起きている問題を簡潔に書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: 実際の挙動を書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: 期待する挙動を書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction Steps
+      description: 再現手順を書いてください。
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification Steps
+      description: 修正確認に使うコマンドや確認手順を書いてください。
+      value: |
+        - [ ] cargo test
+        - [ ] GUI確認
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: 関連するログ、スクリーンショット、ファイルパス、PR、Issueを書いてください。
+    validations:
+      required: false
