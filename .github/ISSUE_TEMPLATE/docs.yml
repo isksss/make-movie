@@ -1,4 +1,4 @@
-name: Docs
+name: ドキュメント
 description: ドキュメント追加・修正チケット
 title: "[Docs]: "
 labels: []
@@ -6,14 +6,14 @@ body:
   - type: textarea
     id: goal
     attributes:
-      label: Goal
+      label: 目的
       description: 追加・修正するドキュメントの目的を書いてください。
     validations:
       required: true
   - type: textarea
     id: target
     attributes:
-      label: Target Documents
+      label: 対象ドキュメント
       description: 対象ドキュメントや配置先を書いてください。
       value: |
         -
@@ -23,7 +23,7 @@ body:
   - type: textarea
     id: requirements
     attributes:
-      label: Requirements
+      label: 要件
       description: ドキュメントに含める内容を箇条書きで書いてください。
       value: |
         -
@@ -33,7 +33,7 @@ body:
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance Criteria
+      label: 受け入れ条件
       description: 完了判定に使う条件を書いてください。
       value: |
         -
@@ -43,7 +43,7 @@ body:
   - type: textarea
     id: verification
     attributes:
-      label: Verification Steps
+      label: 確認手順
       description: 表示確認やリンク確認などを書いてください。
       value: |
         - [ ] リンク切れがない
