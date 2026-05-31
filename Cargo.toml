@@ -15,6 +15,7 @@ repository = "https://github.com/isksss/make-movie"
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+flate2 = "1"
 image = "0.25"
 ab_glyph = "0.2"
 serde = { version = "1", features = ["derive"] }
@@ -28,6 +29,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 sha2 = "0.10"
 roxmltree = "0.20"
 skia-safe = "0.97.2"
+tar = "0.4"
 wgpu = "25"
 wasmtime = { version = "45", features = ["component-model"] }
 wasmtime-wasi = "45"
