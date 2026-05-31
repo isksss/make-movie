@@ -39,7 +39,7 @@ enum Command {
     Preview(PreviewArgs),
     Cleanup(ProjectRootArgs),
     Package(PackageArgs),
-    Doctor,
+    Doctor(DoctorArgs),
     Plugin {
         #[command(subcommand)]
         command: PluginCommand,
@@ -101,6 +101,12 @@ struct PackageArgs {
     output: Option<PathBuf>,
 }
 
+#[derive(Debug, Args)]
+struct DoctorArgs {
+    #[arg(long, default_value = "mm.toml")]
+    project: PathBuf,
+}
+
 #[derive(Debug, Subcommand)]
 enum PluginCommand {
     Install(PluginInstallArgs),
@@ -155,7 +161,7 @@ pub fn run_with(cli: Cli) -> Result<()> {
         Command::Preview(args) => preview(args, messages),
         Command::Cleanup(args) => cleanup(args, messages),
         Command::Package(args) => package(args, messages),
-        Command::Doctor => doctor(messages),
+        Command::Doctor(args) => doctor(args, messages),
         Command::Plugin { command } => plugin(command, messages),
     }
 }
@@ -547,10 +553,15 @@ fn append_package_dir(
     Ok(())
 }
 
-fn doctor(messages: Messages) -> Result<()> {
+fn doctor(args: DoctorArgs, messages: Messages) -> Result<()> {
     let locator = SystemFfmpegLocator;
+    let project = if args.project.exists() {
+        load_project(&args.project)?
+    } else {
+        empty_project()
+    };
     println!("mm doctor");
-    match locator.ffmpeg_path(&empty_project()) {
+    match locator.ffmpeg_path(&project) {
         Ok(path) => println!("ffmpeg: {}", path.display()),
         Err(error) => println!("ffmpeg: {} ({error})", messages.not_found),
     }
@@ -795,7 +806,8 @@ const DOCTOR_HELP_JA: &str = r#"ffmpeg / ffprobe の検出状況を表示する
 使用方法: mm doctor [オプション]
 
 オプション:
-  -h, --help  ヘルプを表示する
+      --project <PROJECT>  project toml のパス [default: mm.toml]
+  -h, --help               ヘルプを表示する
 "#;
 
 const DOCTOR_HELP_EN: &str = r#"Show ffmpeg / ffprobe detection status
@@ -803,7 +815,8 @@ const DOCTOR_HELP_EN: &str = r#"Show ffmpeg / ffprobe detection status
 Usage: mm doctor [OPTIONS]
 
 Options:
-  -h, --help  Print help
+      --project <PROJECT>  Path to project toml [default: mm.toml]
+  -h, --help               Print help
 "#;
 
 const PLUGIN_HELP_JA: &str = r#"plugin を管理する
@@ -967,6 +980,15 @@ mod tests {
         let cli = Cli::try_parse_from(["mm", "--lang", "en", "doctor"]).unwrap();
 
         assert!(matches!(resolve_language(cli.lang), CliLanguage::En));
+    }
+
+    #[test]
+    fn cli_parses_doctor_project() {
+        let cli = Cli::try_parse_from(["mm", "doctor", "--project", "example/mm.toml"]).unwrap();
+        match cli.command {
+            Command::Doctor(args) => assert_eq!(args.project, PathBuf::from("example/mm.toml")),
+            _ => panic!("doctor command として parse されていません"),
+        }
     }
 
     #[test]
