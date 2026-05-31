@@ -10,6 +10,8 @@ export const commands = {
     invoke<string>("import_asset", { projectRoot, sourcePath, kind }),
   importAssetIntoProject: (projectPath: string, sourcePath: string, kind: AssetKind) =>
     invoke<string>("import_asset_into_project", { projectPath, sourcePath, kind }),
+  applyExternalAnalysisResult: (projectToml: string, layerId: string, analysisJson: string) =>
+    invoke<string>("apply_external_analysis_result", { projectToml, layerId, analysisJson }),
   installPlugin: (name: string) => invoke<void>("install_plugin", { name }),
   installConfiguredPlugins: (projectPath: string, globalConfig?: string) =>
     invoke<string[]>(

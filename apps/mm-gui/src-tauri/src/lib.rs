@@ -1,6 +1,8 @@
 use mm_core::{
-    import_asset as import_core_asset, import_asset_into_project as import_core_asset_into_project,
+    apply_external_analysis_to_layer, import_asset as import_core_asset,
+    import_asset_into_project as import_core_asset_into_project,
     load_project as load_core_project, save_project as save_core_project,
+    ExternalAnalysisOptions, ExternalAnalysisResult,
 };
 use mm_plugin_runtime::{
     default_global_config_path, default_plugin_dir, PluginManager, PluginReference,
@@ -56,6 +58,26 @@ fn import_asset_into_project(
 ) -> Result<String, String> {
     let project = import_core_asset_into_project(project_path, source_path, kind)
         .map_err(|error| error.to_string())?;
+    toml::to_string_pretty(&project).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn apply_external_analysis_result(
+    project_toml: String,
+    layer_id: String,
+    analysis_json: String,
+) -> Result<String, String> {
+    let mut project: mm_core::Project =
+        toml::from_str(&project_toml).map_err(|error| error.to_string())?;
+    let analysis: ExternalAnalysisResult =
+        serde_json::from_str(&analysis_json).map_err(|error| error.to_string())?;
+    apply_external_analysis_to_layer(
+        &mut project,
+        &layer_id,
+        &analysis,
+        &ExternalAnalysisOptions::default(),
+    )
+    .map_err(|error| error.to_string())?;
     toml::to_string_pretty(&project).map_err(|error| error.to_string())
 }
 
@@ -151,6 +173,7 @@ pub fn run() {
             list_system_fonts,
             import_asset,
             import_asset_into_project,
+            apply_external_analysis_result,
             install_plugin,
             install_configured_plugins,
             update_plugin,
@@ -285,6 +308,36 @@ path = "{}"
     }
 
     #[test]
+    fn apply_external_analysis_result_adds_position_and_crop_animations() {
+        let project = sample_video_project_toml();
+        let analysis = r#"{
+  "source_width": 640,
+  "source_height": 360,
+  "targets": [
+    {
+      "id": "target-1",
+      "kind": "person",
+      "frames": [
+        { "time": 0.0, "bbox": { "x": 10.0, "y": 20.0, "width": 100.0, "height": 80.0 } },
+        { "time": 0.5, "bbox": { "x": 30.0, "y": 40.0, "width": 120.0, "height": 90.0 } }
+      ]
+    }
+  ]
+}"#;
+
+        let updated = apply_external_analysis_result(
+            project,
+            "video-main".to_string(),
+            analysis.to_string(),
+        )
+        .expect("external analysis を適用できる");
+
+        assert!(updated.contains("property = \"x\""));
+        assert!(updated.contains("property = \"crop_width\""));
+        assert!(updated.contains("value = 60.0"));
+    }
+
+    #[test]
     fn gui_render_options_prefers_bundled_ffmpeg() {
         let dir = tempfile::tempdir().expect("temp dir を作成できる");
         let bundle_dir = dir.path().join("bundle");
@@ -328,5 +381,48 @@ output = "output/movie.mp4"
 asset_mode = "copy"
 "#
         )
+    }
+
+    fn sample_video_project_toml() -> String {
+        r#"[settings]
+title = "Analysis"
+width = 640
+height = 360
+fps = 30
+sample_rate = 48000
+duration = 1.0
+output = "output/movie.mp4"
+asset_mode = "copy"
+
+[[assets]]
+id = "video"
+kind = "video"
+path = "media/video/sample.mp4"
+
+[[tracks]]
+id = "v1"
+name = "V1 Main Video"
+kind = "video"
+
+[[tracks.layers]]
+id = "video-main"
+start = 0.0
+duration = 1.0
+z_index = 0
+
+[tracks.layers.content]
+type = "video"
+asset_id = "video"
+
+[tracks.layers.transform]
+x = 0.0
+y = 0.0
+width = 640.0
+height = 360.0
+scale = 1.0
+rotation = 0.0
+opacity = 1.0
+"#
+        .to_string()
     }
 }
