@@ -3,12 +3,13 @@ use anyhow::{bail, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use mm_core::{
     save_wav_audio, synthesize_with_default_provider, AnimatedProperty, Animation, AssetKind,
-    AudioLayer, Crop, Easing, Effect, FitMode, GradientDirection, Layer, LayerContent, Mask,
-    Project, SubtitleLayer, SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke,
+    AudioLayer, Crop, Easing, Effect, FitMode, GradientDirection, ImageLayer, Layer, LayerContent,
+    Mask, Project, SubtitleLayer, SynthesisRequest, TextAlign, TextLayer, TextShadow, TextStroke,
     Transform, Transition, VideoLayer, VoiceLayer, WipeShape,
 };
 use skia_safe::{
     image::CachingHint, images, surfaces, AlphaType, Color, ColorType, Data, ImageInfo, Paint,
+    PathBuilder, RRect, Rect,
 };
 use std::env;
 use std::fs;
@@ -824,13 +825,93 @@ impl SkiaFrameRenderer {
         for layer in layers {
             let local_time = time - layer.start;
             let transform = resolve_layer_transform(layer, local_time);
-            let mut layer_frame = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 0]));
-            draw_layer_content(project, options, &mut layer_frame, layer, transform, time)?;
+            let mut layer_frame = if let Some(frame) =
+                self.render_native_layer_frame(project, options, layer, transform, time)?
+            {
+                frame
+            } else {
+                let mut frame = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 0]));
+                draw_layer_content(project, options, &mut frame, layer, transform, time)?;
+                frame
+            };
             apply_transition_to_frame(&mut layer_frame, layer, local_time);
             self.draw_rgba_image(surface.canvas(), &layer_frame)?;
         }
 
         self.read_surface(&mut surface, width, height)
+    }
+
+    fn render_native_layer_frame(
+        &self,
+        project: &Project,
+        options: &RenderOptions,
+        layer: &Layer,
+        transform: Transform,
+        time: f64,
+    ) -> Result<Option<RgbaImage>> {
+        let LayerContent::Image(content) = &layer.content else {
+            return Ok(None);
+        };
+        if matches!(content.mask, Some(Mask::Svg { .. })) {
+            return Ok(None);
+        }
+        if transform.rotation != 0.0 || content.fit.is_some() {
+            return Ok(None);
+        }
+
+        let width = project.settings.width;
+        let height = project.settings.height;
+        let mut surface = self.surface(width, height, Rgba([0, 0, 0, 0]))?;
+        self.draw_image_layer(
+            project,
+            options,
+            surface.canvas(),
+            layer,
+            content,
+            transform,
+            time,
+        )?;
+        self.read_surface(&mut surface, width, height).map(Some)
+    }
+
+    fn draw_image_layer(
+        &self,
+        project: &Project,
+        options: &RenderOptions,
+        canvas: &skia_safe::Canvas,
+        layer: &Layer,
+        content: &ImageLayer,
+        transform: Transform,
+        time: f64,
+    ) -> Result<()> {
+        let asset = project
+            .assets
+            .iter()
+            .find(|asset| asset.id == content.asset_id)
+            .with_context(|| format!("画像 asset が見つかりません: {}", content.asset_id))?;
+        let path = options.project_root.join(&asset.path);
+        let image = image::open(&path)
+            .with_context(|| format!("画像を読み込めません: {}", path.display()))?
+            .to_rgba8();
+        let image = apply_crop(
+            image,
+            resolve_layer_crop(layer, content.crop, time - layer.start),
+        );
+        let image = apply_image_effects(image, &layer.effects);
+        let (image, x, y) = prepare_image_for_transform(&image, transform, content.fit);
+
+        canvas.save();
+        self.clip_mask(
+            canvas,
+            content.mask.as_ref(),
+            x,
+            y,
+            image.width(),
+            image.height(),
+        );
+        self.draw_rgba_image_at(canvas, &image, x, y, transform.opacity)?;
+        canvas.restore();
+        Ok(())
     }
 
     fn surface(&self, width: u32, height: u32, color: Rgba<u8>) -> Result<skia_safe::Surface> {
@@ -846,6 +927,17 @@ impl SkiaFrameRenderer {
     }
 
     fn draw_rgba_image(&self, canvas: &skia_safe::Canvas, image: &RgbaImage) -> Result<()> {
+        self.draw_rgba_image_at(canvas, image, 0, 0, 1.0)
+    }
+
+    fn draw_rgba_image_at(
+        &self,
+        canvas: &skia_safe::Canvas,
+        image: &RgbaImage,
+        x: i32,
+        y: i32,
+        opacity: f32,
+    ) -> Result<()> {
         let info = ImageInfo::new(
             (image.width() as i32, image.height() as i32),
             ColorType::RGBA8888,
@@ -855,9 +947,45 @@ impl SkiaFrameRenderer {
         let data = Data::new_copy(image.as_raw());
         let image = images::raster_from_data(&info, data, (image.width() * 4) as usize)
             .context("Skia image を RgbaImage から作成できません")?;
-        let paint = Paint::default();
-        canvas.draw_image(image, (0, 0), Some(&paint));
+        let mut paint = Paint::default();
+        paint.set_alpha_f(opacity.clamp(0.0, 1.0));
+        canvas.draw_image(image, (x, y), Some(&paint));
         Ok(())
+    }
+
+    fn clip_mask(
+        &self,
+        canvas: &skia_safe::Canvas,
+        mask: Option<&Mask>,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+    ) {
+        let rect = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32);
+        match mask {
+            Some(Mask::Circle) => {
+                let radius = width.min(height) as f32 / 2.0;
+                let center = (
+                    x as f32 + width as f32 / 2.0,
+                    y as f32 + height as f32 / 2.0,
+                );
+                let mut path = PathBuilder::new();
+                path.add_circle(center, radius, None);
+                canvas.clip_path(&path.detach(), None, true);
+            }
+            Some(Mask::Ellipse) => {
+                let mut path = PathBuilder::new();
+                path.add_oval(rect, None, None);
+                canvas.clip_path(&path.detach(), None, true);
+            }
+            Some(Mask::RoundedRect { radius }) => {
+                let radius = radius.max(0.0);
+                let rounded_rect = RRect::new_rect_xy(rect, radius, radius);
+                canvas.clip_rrect(rounded_rect, None, true);
+            }
+            Some(Mask::Svg { .. }) | None => {}
+        }
     }
 
     fn read_surface(
@@ -1849,50 +1977,50 @@ fn draw_image(
     transform: Transform,
     fit: Option<FitMode>,
 ) {
-    let Some(fit) = fit else {
-        draw_resized_image(frame, image, transform);
-        return;
-    };
-
-    let target_width = resolved_size(transform.width, image.width());
-    let target_height = resolved_size(transform.height, image.height());
-    let mut fitted = RgbaImage::from_pixel(target_width, target_height, Rgba([0, 0, 0, 0]));
-    match fit {
-        FitMode::Contain => draw_fit_into_canvas(&mut fitted, image, FitMode::Contain),
-        FitMode::Cover => draw_fit_into_canvas(&mut fitted, image, FitMode::Cover),
-        FitMode::Stretch => draw_fit_into_canvas(&mut fitted, image, FitMode::Stretch),
-        FitMode::BlurBackground => {
-            let mut background =
-                fit_image_to_canvas(image, target_width, target_height, FitMode::Cover);
-            background = imageops::blur(&background, 18.0);
-            alpha_blend(&mut fitted, &background, 0, 0, 1.0);
-            draw_fit_into_canvas(&mut fitted, image, FitMode::Contain);
-        }
-    }
-    let mut x = transform.x.round() as i32;
-    let mut y = transform.y.round() as i32;
-    if transform.rotation != 0.0 {
-        let rotated = rotate_image(&fitted, transform.rotation);
-        x -= (rotated.width() as i32 - fitted.width() as i32) / 2;
-        y -= (rotated.height() as i32 - fitted.height() as i32) / 2;
-        fitted = rotated;
-    }
-    alpha_blend(frame, &fitted, x, y, transform.opacity);
+    let (image, x, y) = prepare_image_for_transform(image, transform, fit);
+    alpha_blend(frame, &image, x, y, transform.opacity);
 }
 
-fn draw_resized_image(frame: &mut RgbaImage, image: &RgbaImage, transform: Transform) {
-    let width = resolved_size(transform.width, image.width());
-    let height = resolved_size(transform.height, image.height());
-    let mut resized = imageops::resize(image, width, height, imageops::FilterType::Lanczos3);
+fn prepare_image_for_transform(
+    image: &RgbaImage,
+    transform: Transform,
+    fit: Option<FitMode>,
+) -> (RgbaImage, i32, i32) {
+    let target_width = resolved_size(transform.width, image.width());
+    let target_height = resolved_size(transform.height, image.height());
+    let mut prepared = match fit {
+        Some(fit) => {
+            let mut fitted = RgbaImage::from_pixel(target_width, target_height, Rgba([0, 0, 0, 0]));
+            match fit {
+                FitMode::Contain => draw_fit_into_canvas(&mut fitted, image, FitMode::Contain),
+                FitMode::Cover => draw_fit_into_canvas(&mut fitted, image, FitMode::Cover),
+                FitMode::Stretch => draw_fit_into_canvas(&mut fitted, image, FitMode::Stretch),
+                FitMode::BlurBackground => {
+                    let mut background =
+                        fit_image_to_canvas(image, target_width, target_height, FitMode::Cover);
+                    background = imageops::blur(&background, 18.0);
+                    alpha_blend(&mut fitted, &background, 0, 0, 1.0);
+                    draw_fit_into_canvas(&mut fitted, image, FitMode::Contain);
+                }
+            }
+            fitted
+        }
+        None => imageops::resize(
+            image,
+            target_width,
+            target_height,
+            imageops::FilterType::Lanczos3,
+        ),
+    };
     let mut x = transform.x.round() as i32;
     let mut y = transform.y.round() as i32;
     if transform.rotation != 0.0 {
-        let rotated = rotate_image(&resized, transform.rotation);
-        x -= (rotated.width() as i32 - resized.width() as i32) / 2;
-        y -= (rotated.height() as i32 - resized.height() as i32) / 2;
-        resized = rotated;
+        let rotated = rotate_image(&prepared, transform.rotation);
+        x -= (rotated.width() as i32 - prepared.width() as i32) / 2;
+        y -= (rotated.height() as i32 - prepared.height() as i32) / 2;
+        prepared = rotated;
     }
-    alpha_blend(frame, &resized, x, y, transform.opacity);
+    (prepared, x, y)
 }
 
 fn draw_fit_into_canvas(canvas: &mut RgbaImage, image: &RgbaImage, fit: FitMode) {
@@ -2643,6 +2771,46 @@ mod tests {
 
         assert_eq!(frame.get_pixel(4, 4), &Rgba([255, 0, 0, 255]));
         assert_eq!(frame.get_pixel(12, 12), &Rgba([0, 0, 255, 255]));
+        Ok(())
+    }
+
+    #[test]
+    fn render_frame_skia_applies_image_masks_with_native_clip() -> Result<()> {
+        for mask in [
+            Mask::Circle,
+            Mask::Ellipse,
+            Mask::RoundedRect { radius: 6.0 },
+        ] {
+            let dir = tempfile::tempdir()?;
+            let media = dir.path().join("media/image");
+            fs::create_dir_all(&media)?;
+            let image_path = media.join("green.png");
+            RgbaImage::from_pixel(20, 12, Rgba([0, 255, 0, 255])).save(&image_path)?;
+
+            let mut project = text_project();
+            project.settings.width = 24;
+            project.settings.height = 16;
+            project.assets = vec![Asset {
+                id: "green".to_string(),
+                kind: AssetKind::Image,
+                path: PathBuf::from("media/image/green.png"),
+            }];
+            let mut layer = image_test_layer("masked", "green", 1, 2.0, 2.0);
+            let LayerContent::Image(content) = &mut layer.content else {
+                panic!("image layer ではありません");
+            };
+            content.mask = Some(mask);
+            layer.transform.width = 20.0;
+            layer.transform.height = 12.0;
+            project.tracks[0].layers = vec![layer];
+            let mut options = RenderOptions::new(dir.path(), "output.mp4");
+            options.background = Rgba([0, 0, 0, 255]);
+
+            let frame = render_frame_skia(&project, &options, 0.5)?;
+
+            assert_eq!(frame.get_pixel(2, 2), &options.background);
+            assert_eq!(frame.get_pixel(12, 8), &Rgba([0, 255, 0, 255]));
+        }
         Ok(())
     }
 
